@@ -1,0 +1,88 @@
+{% extends "base.html" %} 
+{% block title %} Gestión Agentes {% endblock %}
+
+{% block content %} 
+<div class="container">
+  <div class="title">
+    <h1>Gestión Agentes</h1>
+  </div>
+  
+  <div class="content_box">
+    {% if agents %}
+    <form method="GET">
+    <div class="filters_container">
+      <p>Usted puede filtrar por ingreso de rut, nombre ó apellido del agente que desea buscar</p> 
+      <p>Usted puede filtrar por estado (activos e inactivos) y por fecha de registro del agente</p> 
+      <div class="select_container">
+
+        <select name="area">
+          <option value="">Área</option>
+          {% for area in areas %}
+            <option value="{{ area.id }}">{{ area.area_description }}</option>
+          {% endfor %}
+        </select>
+        
+        <select name="is_active">
+          <option value="">Estado</option>
+          <option value="True">Activo</option>
+          <option value="False">Inactivo</option>
+        </select>
+      </div> <!-- select container end-->
+
+      <div class="input_container">
+          <input type="text" name="rut" placeholder="RUT">
+          <input type="text" name="first_name" placeholder="Nombre">
+          <input type="text" name="last_name" placeholder="Apellido">
+          <input type="date" name="join_date" placeholder="Fecha de registro">
+        
+          <button class="filter_button" type="submit"><p><i class="fa-solid fa-magnifying-glass"></i> Filtrar</p></button>
+      </div> <!-- input container end-->
+    </div>  <!-- filters container end -->
+  </form>
+    <button class="create_button"><a href="{% url 'agent_signup' %}"><i class="fa-solid fa-plus"></i> Registrar agente</a></button>
+      <table class="ticket_table">
+        <thead>
+          <tr>
+            <th>Detalles</th>
+            <th>Nombre</th>
+            <th>Apellido</th>
+            <th>RUT</th>
+            <th>Área</th>
+            <th>Estado</th>
+            <th>Fecha registro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for agent in agents %}
+          <tr>
+            <td>
+              <a href="{% url 'agent_view' agent.id %}" title="Ver detalles agente"><i class="fa-solid fa-clipboard-list"></i></a>
+            </td>
+            <td>{{ agent.user.first_name }}</td>
+            <td>{{ agent.user.last_name }}</td>
+            <td>{{ agent.rut }}</td>
+            <td>{{ agent.area }}</td>
+            <td> 
+              {% if agent.user.is_active %}
+              <p>Activo</p>
+              {% else %}
+              <p>Inactivo</p>
+              {% endif %}
+            </td>
+            <td>{{ agent.user.date_joined|date:"d/m/Y"}}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+    <div class="rol_box no_agents">
+      <h3>¡UPS!</h3>
+      <h3>No hay agentes registrados</h3>
+      <i class="fa-solid fa-face-dizzy"></i>
+      <br>
+      <button><a href="{% url 'agent_signup' %}"><i class="fa-solid fa-plus"></i> Registrar agente</a></button>
+    </div> <!-- no agents container end-->
+    {% endif %}
+  </div><!-- content box end -->
+</div> <!-- container end -->
+{% endblock %}

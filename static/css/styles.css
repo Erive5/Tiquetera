@@ -1,0 +1,693 @@
+:root {
+    --color-primary: #ffffff; 
+    --color-secondary: #000000;
+    --color-spacecadetlight: #929292a8;
+    --color-coolgray: #8d99aeff; 
+    --color-smokehwhite: rgb(229, 235, 237);  
+    --color-icons2: rgb(179, 3, 3); 
+    --color-icons:rgb(250, 3, 3) ; 
+    --color-contrast: rgb(66, 143, 251);
+    --color-spacecadet: rgb(5, 38, 168); 
+    --color-spacecadetdark: rgb(4, 18, 72); 
+    --color-spacecadet2: rgb(5, 106, 168); 
+    --color-body: rgb(232, 228, 223); 
+    --color-contrast_text: rgb(245, 242, 193); 
+}
+
+@font-face {
+    font-family: 'MiFuente';
+    src: url('../fonts/Raleway-Bold.ttf') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'Mititulo';
+    src: url('../fonts/Raleway-Black.ttf') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+}
+
+@font-face {
+    font-family: 'MiParrafo';
+    src: url('../fonts/Raleway-Medium.ttf') format('woff2');
+    font-weight: normal;
+    font-style: normal;
+}
+
+/* Body */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'MiFuente';
+    background-color: var(--color-body);
+}
+
+form label {
+    display: flex;
+    justify-content: start;
+    font-size: 15px;
+}
+
+form input {
+    display: flex;
+    justify-content: end;
+}
+
+
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], select {
+    background-color: var(--color-primary); 
+    border: 1px solid #ccc; 
+    border-radius: 15px; 
+    padding: 8px; 
+    width: 200px;
+    text-align: center;
+    margin: 15px 0 5px 15px;
+}
+
+textarea {
+    border: 1px solid #ccc; /* Borde */
+    border-radius: 15px; /* Nuevo radio de borde */
+    text-align: center;
+}
+
+.register-form .form-group {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.user_info_container {
+    display:inline-block;
+}
+/* Estilos para las etiquetas */
+.register-form .form-group label {
+    width: 200px;
+    margin-right: 10px;
+    text-align: right;
+}
+
+/* Estilos para los inputs */
+.register-form .form-group input, 
+.register-form .form-group select, 
+.register-form .form-group textarea {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 15px;
+    background-color: #f2f2f2;
+    text-align: center;
+}
+
+/* Header */
+.title {
+    padding: 5px;
+    color: var(--color-contrast_text);
+    background-color: var(--color-spacecadet2);
+    font-family: 'MiTitulo';
+    letter-spacing: 7pt;
+    font-weight:100;
+}
+
+.title h1 {
+    text-align: center;
+}
+
+/* Text */
+.content_box {
+    text-align: justify;
+    margin: 40px;
+}
+
+/* Containers */
+.container {
+    min-height: calc(100vh - 120px); /* Resta la altura del footer */
+    background-color: var(--color-background); 
+}
+
+.rol_container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between; /* no se si esto lo estoy usando */
+}
+
+/* Boxes */
+.rol_box {
+    flex: 1 1 calc(50% - 20px); 
+    margin: 0px 20px 20px 0px; 
+    background-color: var(--color-spacecadetlight);
+    padding: 30px;
+    box-sizing: border-box;
+    border-radius: 8px;
+}
+
+/* Info Boxes */
+.rol_box .info_box {
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* Centrar verticalmente */
+    align-items: center; /* Centrar horizontalmente */
+    text-align: justify;
+}
+
+.no_tickets {
+    box-sizing: border-box;
+    margin: 50px 60px 50px 60px;
+    text-align: center;
+    font-size: 30px;
+    padding-bottom: 70px;
+}
+
+.rol_box .info_box * {
+    margin: 0;
+}
+
+.rol_box .box_title {
+    background-color: var(--color-coolgray); 
+    padding: 5px; 
+    box-sizing: border-box;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    color: var(--color-secondary);
+}
+
+.rol_box .info_box p,
+.rol_box .info_box ol,
+.rol_box .info_box ul,
+.rol_box .info_box li {
+    margin: 0; /* Ajusta los márgenes según lo desees */
+}
+
+.rol_box h4 {
+   text-align: center;
+   font-size: 25px;
+}
+
+.data_container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    margin-top: calc(89px+120px);
+}
+
+.filters_container {
+    padding: 2px 0 15px 0 ;
+    background-color: var(--color-coolgray);
+    color: var(--color-primary);
+    border-radius: 20px;
+    width: 100%;
+    margin: 0 0 40px 0;
+} 
+
+.filters_container p{
+    text-align: center; 
+    color: var(--color-primary);
+}
+
+.select_container{
+    width: 100%;
+    display: flex;
+    justify-content: center;
+} 
+
+.select_container select{
+    margin: 0 15px 10px 0;
+    border-radius: 10px;
+    padding: 5px 10px;
+    text-align: center;
+}  
+
+.input_container{
+    width: 100%;
+    display: flex;
+    justify-content: center;  
+} 
+
+.input_container input {
+    border-radius: 10px;
+    text-align: center;
+    justify-content: center;
+    color: var(--color-secondary);
+    height: 20px;
+}
+
+.table_container {
+    width: 70%;
+}
+
+.ticket_table{
+    border-radius: 20px;
+    overflow: hidden;
+    width: 100%;
+}
+
+table tr {
+    border: 2px solid var(--color-primary);
+}
+
+th {
+    background-color: var(--color-spacecadet2);
+    color: var(--color-primary);
+}
+
+td {
+    background-color: var(--color-spacecadetlight);
+}
+
+th, td {
+    text-align: center;
+    font-family: "MiParrafo";
+    font-weight: 100;
+    padding: 10px; /* Ajustar el relleno de las celdas */
+}
+
+.user_info_table {
+    display: grid;
+    grid-template-areas: 
+    "user_info user_info personal_info personal_info" 
+    "user_key user_value firstname_key firstname_value"
+    "type_key type_value lastname_key lastname_value"
+    "reg_date_key reg_date_value rut_key rut_value"
+    "optional_key optional_value phone_key phone_value";
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+}
+
+.user_info_table {
+    margin: 50px;
+}
+
+.info {
+    background-color: var(--color-spacecadet2);
+    padding: 20px;
+    font-family: 'MiParrafo';
+    font-weight: lighter;
+    color: var(--color-secondary);
+    margin-block-end: 0;
+    margin-block-start: 0;
+    border: 1px solid var(--color-spacecadetlight); 
+}
+
+.table_value {
+    background-color: var(--color-spacecadetlight);
+    color: var(--color-secondary);
+    padding: 20px;
+    margin-block-end: 0;
+    margin-block-start: 0;
+    border: 1px solid var(--color-primary); 
+}
+
+.table_key {
+    background-color: var(--color-coolgray);
+    color: var(--color-secondary);
+    padding: 20px;
+    margin-block-end: 0;
+    margin-block-start: 0; 
+    border: 1px solid var(--color-primary); 
+}
+
+.user_info {
+    grid-area: user_info;
+    margin-block-end: 0;
+    margin-block-start: 0; 
+    border-radius: 20px 0 0 0;
+}
+
+.user_key {
+    grid-area: user_key;
+    padding: 20px;   
+}
+
+.user_value {
+    grid-area: user_value;
+}
+
+.firstname_key {
+    grid-area: firstname_key;     
+}
+
+.firstname_value {
+    grid-area: firstname_value;
+}
+
+.personal_info {
+    grid-area: personal_info;
+    border-radius: 0 20px 0 0; 
+}
+
+.lastname_key {
+    grid-area: lastname_key;
+}
+
+.lastname_value {
+    grid-area: lastname_value;
+}
+
+.type_key {
+    grid-area: type_key;
+}
+
+.type_value {
+    grid-area: type_value;
+}
+
+.reg_date_key {
+    grid-area: reg_date_key;
+}
+
+.reg_date_value {
+    grid-area: reg_date_value;   
+}
+
+.rut_key {
+    grid-area: rut_key;
+}
+
+.rut_value {
+    grid-area: rut_value;     
+}
+
+.optional_key {
+    grid-area: optional_key;
+    border-radius: 0 0 0 20px;   
+}
+
+.optional_value {
+    grid-area: optional_value;
+}
+
+.phone_key {
+    grid-area: phone_key;
+}
+
+.phone_value {
+    grid-area: phone_value;
+    border-radius: 0 0 20px 0;   
+}
+
+.text_container {
+    text-align: justify;
+    margin: 0 40px;
+}
+
+.user_info_text {
+    font-size: 30px;
+}
+
+
+.column {
+    background-color: var(--color-coolgray);
+    width: 400px;
+    text-align: center;
+    border-radius: 20px;
+    padding: 40px;
+    margin: 0 50px 0 0;
+}
+
+.rows_container {
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centra las filas horizontalmente */
+    margin: 0 auto; /* Centra el contenedor */
+    max-width: 1200px;
+    gap: 20px; /* Espacio entre las filas */
+}
+
+.fila_top,
+.fila_bottom {
+    width: 100%; /* Ancho completo para ocupar toda la fila */
+    text-align: center;
+    border-radius: 20px;
+    padding: 20px; /* Reduje el relleno para dejar más espacio para las tablas */
+    box-sizing: border-box; /* Incluye el relleno y el borde en el ancho total */
+}
+
+.column p {
+    margin: 0;
+    padding: 20px;
+}
+
+.column_left p {
+    margin: 0;
+    padding: 20px;
+}
+
+.column_right p {
+    margin: 0;
+    padding: 20px;
+}
+
+/* Fonts */
+p, li {
+    font-family: 'MiParrafo';
+    font-size: 16px;
+    color: var(--color-secondary);
+}
+
+.icons {
+    color: var(--color-icons);
+    margin: 0 10px 0 10px;
+}
+
+.icons:hover {
+    color: var(--color-primary);
+}
+
+.fa-face-grin-beam-sweat {
+    font-size: 70px; 
+    width: 70px;
+    background-color: var(--color-primary);
+    border-radius: 100%;
+}
+
+.fa-clipboard-list {
+    background-color: var(--color-spacecadet);
+    color: var(--color-smokehwhite);
+    border-radius: 10px;
+    border-bottom: 3px solid var(--color-spacecadet2);
+    border-left: 3px solid var(--color-spacecadet2);
+    border-right: 3px solid var(--color-smokehwhite);
+    border-top: 3px solid var(--color-smokehwhite);
+    padding: 8px;
+    font-size: 20px;
+}
+
+.fa-clipboard-list:hover {
+    background-color: var(--color-secondary);
+}
+
+.fa-github{
+    background-color: var(--color-secondary);
+    color: var(--color-primary);
+    font-size: 40px;
+}
+
+.icons2:hover {
+    color: var(--color-secondary);
+}
+/* Links */
+a {
+    text-decoration: none; 
+    color: inherit; 
+}
+
+/* Navbar */
+.navbar {
+    background-color: var(--color-secondary);
+    margin: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+}
+
+#logo {
+    width: 150px;
+    margin-left: 46px;
+}
+
+.navList {
+   width: 100%;
+   font-size: 20px;
+   margin: 0 23px 0 0;
+   display: flex;
+   justify-content: end;
+}
+
+.navItem {
+    display: inline-block;
+    color: var(--color-contrast);
+    list-style: none;
+    margin: 0 30px;
+    letter-spacing: 3pt;
+}
+
+.navItem a:hover {
+    color: var(--color-primary);
+    text-decoration: underline;
+}
+
+
+
+/* Dropdown */
+
+.dropdown form {
+    display: none;
+    margin-top: 10px;
+}
+
+input[type="checkbox"] {
+    display: none;
+}
+
+.dropdown label {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.dropdown label i {
+    margin-right: 8px;
+    transition: 0.8s;
+}
+
+input[type="checkbox"]:checked ~ form {
+    display: block;
+}
+
+input[type="checkbox"]:checked ~ label i {
+    transform: rotate(-180deg);
+}
+
+/* Ticket attributes dropdown */
+.dropdown_content {
+    display: none;
+}
+
+.dropdown_toggle:checked + .dropbtn_atributos + .dropdown_content {
+    display: block;
+}
+
+.dropdown_content {
+    position: absolute;
+    background-color: var(--color-secondary);
+    min-width: 160px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    z-index: 1;
+    border-radius: 10px;
+}
+
+.dropdown_content a {
+    color: var(--color-primary);
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+}
+
+.dropdown_content a:hover {
+    background-color: var(--color-spacecadet);
+}
+
+/* Buttons */
+button {
+    box-sizing: border-box;
+    background-image: linear-gradient(to bottom, var(--color-spacecadet), var(--color-spacecadet2));
+    border-radius: 15px;
+    border-color: var(--color-primary);
+    color: var(--color-smokehwhite);
+    border: 1px solid var();
+    margin: 15px;
+    padding: 8px;
+    width: 200px;
+}
+
+button:hover{
+    background-image: linear-gradient(to bottom, var(--color-spacecadet), var(--color-secondary));
+}
+
+button i {
+    font-size: 18px;
+}
+
+button a {
+    font-family: 'MiParrafo';
+    font-weight: 400;
+    font-size: 18px;
+}
+
+button p {
+    font-family: 'MiParrafo';
+    font-weight: 400;
+    font-size: 18px;
+    margin: 0;
+    color: var(--color-primary);
+}
+
+#logout_button {
+    font-size: 30px;
+}
+
+#logout_button:hover {
+    font-size: 35px;
+}
+
+.delete_button {
+    background-color: var(--color-icons);
+}
+
+.edit_button {
+    background-color: green;
+}
+
+/* Footer */
+footer {
+    width: 100%;
+    height: 120px;
+    background-color: var(--color-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    position: relative; 
+    bottom: 0; 
+    margin-top: 20px;
+}
+
+footer .content_footer a {
+    display: flex; /* Utilizar flexbox para alinear elementos */
+    align-items: center; /* Centrar verticalmente los elementos */
+    text-decoration: none; /* Quitar el subrayado del enlace */
+}
+
+footer .content_footer a i {
+    margin-right: 10px/* Ajustar el espaciado entre el icono y el párrafo */
+}
+
+footer .content_footer a p {
+    color: var(--color-primary);
+    font-size: 18px;
+}
+
+.content_footer p {
+    position: relative; /* Añadir posición relativa para animación */
+}
+
+.content_footer p::after {
+    content: ""; /* Agregar contenido al seudoelemento */
+    position: absolute; /* Posicionar de forma absoluta */
+    bottom: 0; /* Alinear al fondo del párrafo */
+    right: 100%; /* Inicialmente, fuera del párrafo (a la derecha) */
+    width: 0; /* Ancho inicial */
+    height: 2px; /* Altura del subrayado */
+    background-color: var(--color-spacecadet2); /* Color del subrayado */
+    transition: width 0.7s ease-in-out, right 0.7s ease-in-out; /* Transición de ancho y posición */
+}
+
+.content_footer p:hover::after {
+    width: 100%; /* Ancho completo al pasar el ratón */
+    right: 0; /* Mover hacia la izquierda para que aparezca */
+}
+
+footer p {
+    margin-right: 63px;
+    color: var(--color-primary);
+    font-size: 18px;
+}

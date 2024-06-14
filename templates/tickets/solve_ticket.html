@@ -1,0 +1,33 @@
+{% extends "base.html" %} 
+{% block title %} Resolver ticket {% endblock %}
+
+{% block content %}
+<div class="container">
+    {{ error }}
+<h1>
+    Resolución ticket
+</h1>
+
+<h3>Información ticket </h3>
+
+<p>Id: {{ ticket.id }}</p>
+<p>Asunto: {{ ticket.issue }}</p>
+<p>Fecha apertura: {{ ticket.opening_date }}</p>
+<p>Agente apertura: {{ ticket.opening_agent }}</p>
+<p>Prioridad: {{ ticket.priority }}</p>
+<p>Tipo: {{ ticket.type }}</p>
+<p>Cliente: {{ticket.customer}} </p>
+<p>Observación: {{ ticket.observation }}</p>
+<p>Área derivación: {{ ticket.asigned_area }}</p>
+<p>Estado: {{ ticket.status }}</p>
+
+<h3>Resolución</h3>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button>
+        Resolver
+    </button>
+</form> 
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %} 
+{% block title %} Mi perfil {% endblock %}
+
+{% block content %}
+<div class="container">
+    
+        <div class="title">
+            <h1>Mi Perfil</h1>
+        </div>
+
+    <div class="content_container user_info_table">
+        
+            <h3 class="info user_info"><i class="icons fa-solid fa-user"></i>Información Usuario</h3>
+            <p class="table_key user_key">Usuario:</p> <p class="table_value user_value">{{ user.username }}</p>
+            <p class="table_key type_key">Tipo cuenta: </p>
+                {% if user.is_superuser and user.is_staff %}
+                    <p class="table_value type_value">Jefe de Mesa</p>
+                {% elif user.is_staff and not user.is_superuser %}
+                   <p class="table_value type_value">Agente</p> 
+                {% else %}
+                <p class="table_value type_value">Cliente</p>
+                {% endif %}
+            </p>
+            <p class="table_key reg_date_key">Fecha registro:</p> <p class="table_value reg_date_value">{{ user.date_joined|date:"d/m/Y" }}</p>
+            {% if user.is_staff %}
+                <p class="table_key optional_key">Área:</p> <p class="table_value optional_value"> {{ user.profile_user.area }}</p>
+            {% else %}
+                <p class="table_key optional_key">Última actividad:</p> <p class="table_value optional_value">{{ user.last_login }}</p>
+            {% endif %}
+
+            <h3 class="info personal_info"><i class="icons fa-solid fa-phone"></i>Datos contacto</h3>
+            <p class="table_key firstname_key">Nombre:</p>  <p class="table_value firstname_value">{{ user.first_name }}</p>
+            <p class="table_key lastname_key">Apellido:</p> <p class="table_value lastname_value"> {{ user.last_name }}</p>
+            <p class="table_key rut_key">RUT: </p> <p class="table_value rut_value">{{ user.profile_user.rut }}</p>
+            <p class="table_key phone_key">Teléfono:</p> <p class="table_value phone_value"> {{ user.profile_user.phone }}</p>
+        
+        <button><a href="{% url 'modify_password' user.id %}"><i class="fa-solid fa-unlock-keyhole"></i> Modificar contraseña</a></button>
+        <button><a href="{% url 'modify_user_data' request.user.id %}"><i class="fa-solid fa-user-pen"></i> Modificar datos</a></button>
+    </div>
+</div>
+{% endblock %}

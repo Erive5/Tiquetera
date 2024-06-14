@@ -1,0 +1,44 @@
+{% extends "base.html" %} 
+{% block title %} Completar perfil {% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="title">
+        <h1>
+            Completar perfil
+        </h1>
+    </div>
+    <div class="content_box register-form">
+         <div class="data_container">
+            <div class="user_info_container">
+
+                <h3 class="title_info">Tu Usuario</h3>
+                
+                <p class="paragraph">Correo: {{ user_data.username }}</p>
+                <p class="paragraph">Nombre: {{ user_data.first_name }} {{ user_data.last_name }}</p>
+                <hr>
+                <h3 class="title_info">Datos personales</h3>
+                {% if error %}
+                    <p>{{ error }}</p>
+                {% endif %}
+                <p> Por favor, completa los siguientes campos para concretar tu registro</p>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="form-group">
+                        {{ form.rut.label_tag }}
+                        {{ form.rut }}
+                    </div>
+                    <div class="form-group">
+                         {{ form.phone.label_tag }}
+                         {{ form.phone }}
+                     </div>
+                    <button>
+                        Continuar
+                    </button>
+                </form> 
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

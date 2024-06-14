@@ -1,0 +1,85 @@
+{% extends "base.html" %} 
+{% block title %} Gestión Tickets {% endblock %}
+
+{% block content %} 
+<div class="container">
+  <div class="title">
+    <h1>Gestión Tickets</h1>
+  </div>
+  
+  <div class="content_box">
+    {% if tickets %}
+    <form method="GET">
+    <div class="filters_container">
+      <p>Opciones de filtrado</p> 
+      <div class="select_container">
+        <select name="type">
+          <option value="">Tipo</option>
+          {% for type in types %}
+          <option value="{{ type.id }}">{{ type.type_description }}</option>
+          {% endfor %}
+        </select>
+        
+        <select name="status">
+          <option value="">Estado</option>
+          {% for status in statuses %}
+          <option value="{{ status.id }}">{{ status.status_description }}</option>
+          {% endfor %}
+        </select>
+      </div> <!-- select container end-->
+
+      <div class="input_container">
+          <input type="date" name="specific_date" placeholder="Fecha específica">
+          <button class="filter_button" type="submit"><p><i class="fa-solid fa-magnifying-glass"></i> Filtrar</p></button>
+      </div> <!-- input container end-->
+    </div>  <!-- filters container end -->
+  </form>
+      <table class="ticket_table">
+        <thead>
+          <tr>
+            <th>Detalles</th>
+            <th>Id</th>
+            <th>Asunto</th>
+            <th>Agente apertura</th>
+            <th>Fecha Apertura</th>
+            <th>Tipo</th>
+            <th>Área</th>
+            <th >Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ticket in tickets %}
+          <tr>
+            <td>
+              <a href="{% url 'ticket_view' ticket.id %}" title="Ver detalles ticket"><i class="fa-solid fa-clipboard-list"></i></a>
+            </td>
+            <td>{{ ticket.id }}</td>
+            <td>{{ ticket.issue }}</td>
+            <td>{{ ticket.opening_agent.user.first_name }} {{ ticket.opening_agent.user.last_name }}</td>
+            <td>{{ ticket.opening_date|date:"d/m/Y" }}</td>
+            <td>{{ ticket.type }}</td>
+            <td>{{ ticket.asigned_area }}</td>
+            <td> 
+              {% if ticket.status.status_description == "Resuelto" %}
+              <p>Resuelto</p>
+              {% elif ticket.status.status_description == "No aplica" %}
+              <p>No aplica</p>
+              {% else %}
+              <p>A resolución</p>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+    <div class="rol_box no_tickets">
+      <h3>¡UPS!</h3>
+      <h3>No hay tickets asociados a su cuenta</h3>
+      <i class="fa-solid fa-face-dizzy"></i>
+      <br>
+    </div> <!-- no tickets container end-->
+    {% endif %}
+  </div><!-- content box end -->
+</div> <!-- container end -->
+{% endblock %}

@@ -1,0 +1,105 @@
+{% extends "base.html" %} 
+{% block title %} Gestión Tickets {% endblock %}
+
+{% block content %} 
+<div class="container">
+  <div class="title">
+    <h1>Gestión Tickets</h1>
+  </div>
+  
+  <div class="content_box">
+    {% if tickets %}
+    <form method="GET">
+    <div class="filters_container">
+      <p> Al filtrar por agentes, usted puede ingresar el rut, nombre ó apellido</p> 
+      <div class="select_container">
+        <select name="priority">
+          <option value="">Prioridad</option>
+          {% for priority in priorities %}
+          <option value="{{ priority.id }}">{{ priority.priority_description }}</option>
+          {% endfor %}
+        </select>
+      
+        <select name="type">
+          <option value="">Tipo</option>
+          {% for type in types %}
+          <option value="{{ type.id }}">{{ type.type_description }}</option>
+          {% endfor %}
+        </select>
+        
+        <select name="status">
+          <option value="">Estado</option>
+          {% for status in statuses %}
+          <option value="{{ status.id }}">{{ status.status_description }}</option>
+          {% endfor %}
+        </select>
+  
+        <select name="area">
+          <option value="">Área</option>
+          {% for area in areas %}
+          <option value="{{ area.id }}">{{ area.area_description }}</option>
+          {% endfor %}
+        </select>
+      </div> <!-- select container end-->
+
+      <div class="input_container">
+          <input type="text" name="opening_agent" placeholder="Ejecutivo apertura">
+          <input type="text" name="closure_agent" placeholder="Ejecutivo cierre">
+          <input type="date" name="specific_date" placeholder="Fecha específica">
+          <button class="filter_button" type="submit"><p><i class="fa-solid fa-magnifying-glass"></i> Filtrar</p></button>
+      </div> <!-- input container end-->
+    </div>  <!-- filters container end -->
+  </form>
+    <button class="create_button"><a href="{% url 'create_ticket' %}"><i class="fa-solid fa-plus"></i> Crear ticket</a></button>
+      <table class="ticket_table">
+        <thead>
+          <tr>
+            <th>Detalles</th>
+            <th>Id</th>
+            <th>Prioridad</th>
+            <th>Asunto</th>
+            <th>Agente apertura</th>
+            <th>Fecha Apertura</th>
+            <th>Tipo</th>
+            <th>Área</th>
+            <th >Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ticket in tickets %}
+          <tr>
+            <td>
+              <a href="{% url 'ticket_view' ticket.id %}" title="Ver detalles ticket"><i class="fa-solid fa-clipboard-list"></i></a>
+            </td>
+            <td>{{ ticket.id }}</td>
+            <td>{{ ticket.priority }}</td>
+            <td>{{ ticket.issue }}</td>
+            <td>{{ ticket.opening_agent.user.first_name }} {{ ticket.opening_agent.user.last_name }}</td>
+            <td>{{ ticket.opening_date|date:"d/m/Y" }}</td>
+            <td>{{ ticket.type }}</td>
+            <td>{{ ticket.asigned_area }}</td>
+            <td> 
+              {% if ticket.status.status_description == "Resuelto" %}
+              <p>Resuelto</p>
+              {% elif ticket.status.status_description == "No aplica" %}
+              <p>No aplica</p>
+              {% else %}
+              <button><a href="{% url 'solve_ticket' ticket.id %}"><i class="fa-solid fa-check"></i> Resolver</a></button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+    <div class="rol_box no_tickets">
+      <h3>¡UPS!</h3>
+      <h3>No hay tickets registrados</h3>
+      <i class="fa-solid fa-face-dizzy"></i>
+      <br>
+      <button><a href="{% url 'create_ticket' %}"><i class="fa-solid fa-plus"></i> Crear ticket</a></button>
+    </div> <!-- no tickets container end-->
+    {% endif %}
+  </div><!-- content box end -->
+</div> <!-- container end -->
+{% endblock %}

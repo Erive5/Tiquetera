@@ -1,0 +1,55 @@
+{% extends 'base.html' %} {% block content %}
+<div class="container">
+  <div class="title">
+    <h1>Áreas</h1>
+  </div>
+  <div class="content_box">
+      
+      <div class="dropdown">
+        <input type="checkbox" id="toggle-form" />
+        <label class="label_dropdown" for="toggle-form">
+          <h1><i class="fa-solid fa-circle-chevron-down"></i> Crear area</h1>
+        </label>
+        <form method="post">
+          {% csrf_token %} {{ form.as_p }}
+          <button class="save_button" type="submit">
+            <p><i class="fa-solid fa-floppy-disk"></i> Guardar</p>
+          </button>
+        </form>
+      </div>
+    <div class="data_container">
+      {% if areas %}
+      <div class="table_container">
+        <table class="ticket_table">
+          <tr>
+            <th>ID</th>
+            <th>Descripción</th>
+            <th>Acción</th>
+          </tr>
+
+          {% for area in areas %}
+          <tr>
+            <td>{{ area.id }}</td>
+            <td>{{ area.area_description }}</td>
+            <td>
+              <form method="get" action="{% url 'edit_area' area.id %}">
+                <button type="submit"><i class="fa-solid fa-pen"></i></button>
+              </form>
+              <form method="post" action="{% url 'delete_area' area.id %}">
+                {% csrf_token %}
+                <button class="delete_button" type="submit">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </table>
+        {% else %}
+        <div class="no_tickets">No hay areas para mostrar</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

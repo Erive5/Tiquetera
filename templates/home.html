@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% block title %} Inicio {% endblock %}
+{% block content %}
+<div class="container">
+    <div class="title">
+        <h1>Helpdesk: Propuesta</h1>
+    </div>
+    <div class="content_box">
+        <h2 class="header2"><i class="icons fa-solid fa-lightbulb"></i> Planteamiento</h2>
+        <div class="text_container">
+            <p>Proyecto propuesto en institución académica que desarrolla en respuesta a la necesidad de optimizar el proceso de manejo de incidencias en la mesa de ayuda, se plantea el desarrollo de un software de gestión de tiques. Este sistema busca mejorar la eficiencia y la organización en la atención de solicitudes, reemplazando el uso de planillas Excel por una plataforma más ágil y accesible para todos los usuarios.</p>
+            <p>A continuación, se detallan los requerimientos funcionales del software, organizados por roles de usuario, con el objetivo de ofrecer una solución que satisfaga las necesidades de la consultora en su labor diaria de atención a sus clientes.</p>
+            <p>Además, se han creado 3 usuarios por defecto para probar el sistema desde los distintos roles:</p> 
+            <p>
+                <ul>
+                    <li>Usuario Cliente = alambrito@cliente.cl </li>
+                    <li>Usuario Agente = agente@ventas.cl </li>
+                    <li>Usuario Administrador = jefemesa@admin.cl</li>
+                </ul>
+            </p>
+                
+            <p>La contraseña para los 3 usuarios es la misma = password123 </p>
+            <br>       
+            <h3>Funciones según tipo de usuario: </h3>
+        </div>
+        <div class="content_container">
+            <div class="rol_box">  
+                <div class="box_title">
+                    <h4><i class="icons fa-solid fa-user"></i>Usuario</h4>
+                </div>
+                <div class="info_box">
+                    <p>Hereda sus funciones y atributos al resto de roles (Jefe de mesa, agente y cliente)</p>
+                    <ol>
+                        <li>Visualización detallada de su perfil.</li>
+                        <li>Modificación de contraseña</li>
+                        <li>Modificación de datos de contacto.
+                            <ul>
+                                <li>Teléfono</li>
+                                <li>Correo (nombre de usuario)</li>
+                            </ul>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+            <div class="rol_box">
+                <div class="box_title">
+                    <h4><i class="icons fa-solid fa-face-smile"></i>Cliente</h4>
+                </div>
+                <div class="info_box">
+                    <p>Además se agrega un rol de cliente para que este pueda ver los tickets asociados a su cuenta</p>
+                    <ol>
+                        <li>Registro de usuario</li>
+                        <li>Visualizar listado de tickets filtrando por 
+                            <ul>
+                                <li>Fecha específica.</li>
+                                <li>Estado ticket.</li>
+                                <li>Tipo de tique.</li>
+                            </ul>
+                        </li>
+                        <li>Visualización detallada de ticket.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="rol_box">
+                <div class="box_title">
+                    <h4><i class="icons fa-solid fa-headphones"></i>Agentes</h4>  
+                </div>
+                <div class="info_box">
+                    <ol>
+                        <li>Creación de tiques para atención de clientes.</li>
+                        <li>Asignación de características a los tiques:
+                            <ul>
+                                <li>Nombre del cliente.</li>
+                                <li>RUT del cliente.</li>
+                                <li>Datos de contacto del cliente (teléfono, correo electrónico).</li>
+                                <li>Tipo de tique (felicitación, consulta, reclamo, problema).</li>
+                                <li>Criticidad.</li>
+                                <li>Detalle del servicio.</li>
+                                <li>Detalle del problema.</li>
+                                <li>Área para derivar (si corresponde).</li>
+                            </ul>
+                        </li>
+                        <li>Asignación del tique al agente que comienza la toma del requerimiento.</li>
+                        <li>Asignación de un área específica para resolver el tique, cambiando el estado a "A resolución".</li>
+                        <li>Visualización de los tiques y cambio de estado a "Resuelto" o "No aplicable".</li>
+                        <li>Agregar observaciones y proceder al cierre del tique.</li>
+                        <li>Conservar registro de los usuarios que crearon y cerraron el tique.</li>
+                        <li>Previsualización del tique creado.</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="rol_box">
+                <div class="box_title">
+                   
+                    <h4><i class="icons fa-solid fa-user-tie"></i>Jefe de Mesa</h4>
+                </div>
+                <div class="info_box">
+                    <ol>
+                        <li>Obtener el listado de tiques creados, filtrando por:
+                            <ul>
+                                <li>Fecha específica.</li>
+                                <li>Criticidad.</li>
+                                <li>Tipo de tique.</li>
+                                <li>Área</li>
+                                <li>Ejecutivo que abre el tique.</li>
+                                <li>Ejecutivo que cierra el tique.</li>
+                            </ul>
+                        </li>
+                        <li>Presentación del listado de tiques en una tabla, detallando:
+                            <ul>
+                                <li>Nombre del ejecutivo que generó el tique.</li>
+                                <li>Fecha de creación.</li>
+                                <li>Tipo de tique.</li>
+                                <li>Área de destino.</li>
+                                <li>Criticidad.</li>
+                                <li>Estado.</li>
+                            </ul>
+                        </li>
+                        <li>Crear nuevos ejecutivos o usuarios del sistema.</li>
+                        <li>Crear y editar áreas, tipos de tique y criticidades.</li>
+                        <li>Desactivar el acceso al sistema de usuarios eliminados sin eliminar los tiques asociados.</li>
+                    </ol>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% load static  %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <title>{% block title %} {% endblock %} </title>
+</head>
+<body>
+    <nav>
+        <div class="navbar"> 
+            <img src="{% static 'img/2.png' %}" alt="Logo" id="logo">
+            <ul class="navList">
+                <li class="navItem"><a href="{% url 'home' %}">Inicio</a></li>
+                {% if user.is_authenticated %}
+                <li class="navItem"><a href="{% url 'my_profile' %}">Mi perfil</a></li>
+                <li class="navItem"><a href="{% url 'tickets' %}">Tickets</a></li>
+                {% if user.is_superuser %}
+                <li class="navItem dropdown">
+                    <input type="checkbox" id="attributos_checkbox" class="dropdown_toggle"> <!-- Checkbox -->
+                    <label for="attributos_checkbox" class="dropbtn_atributos">Atributos Tickets</label>
+                    <div class="dropdown_content" id="attributos_content"> <!-- Dropdown content -->
+                        <a href="{% url 'priorities' %}">Gestión prioridades</a>
+                        <a href="{% url 'types' %}">Gestión tipos</a>
+                        <a href="{% url 'statuses' %}">Gestión estados</a>
+                        <a href="{% url 'areas' %}">Gestión áreas</a>
+                    </div>
+                </li>
+                    <li class="navItem"><a href="{% url 'agents' %}">Agentes</a></li>
+                    <li class="navItem"><a href="{% url 'customers' %}">Clientes</a></li>
+                {% endif %}
+                <li class="navItem"><a href="/logout" title="Cerrar sesión">
+                    <i alt="Salir" id="logout_button" class="icons fa-solid fa-right-from-bracket"></i>
+                </a></li>
+                {% else %}
+                <li class="navItem"><a href="{% url 'create_ticket' %}">Iniciar sesión</a></li>
+                <li class="navItem"><a href="{% url 'customer_signup' %}">Registrarse</a></li>
+                {% endif %}
+            </ul>
+        </div>
+            
+    </nav>
+    {% block content %}
+
+    {% endblock %} 
+    <footer>
+        <div class="content_footer">
+            <a href="https://github.com/Erive5">
+                <i class="fa-brands fa-github"></i>
+                <p>Desarrollado por Erika Mejías</p>
+            </a>
+        </div>
+    </footer>
+</body>
+</html>

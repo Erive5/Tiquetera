@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %} Editar ticket {% endblock %}
+{% block content %}
+<div class="container">
+<h1>Editar Ticket </h1>
+<h4> ID : {{ ticket.id }}</h4>
+{% if error %}
+<p>{{ error }}</p>
+{% endif %}
+<form action="" method="post">
+  {% csrf_token %}
+  {{ create_form.as_p }}
+  
+  {% if closed_form %}
+  <h3>Información de Cierre</h3>
+  {% csrf_token %}
+  {{ closed_form.as_p }}
+  {% endif %}
+
+  <button class="save_button" type="submit"><p><i class="fa-solid fa-floppy-disk"></i> Guardar</p></button>
+</form>
+</div>
+{% endblock %}

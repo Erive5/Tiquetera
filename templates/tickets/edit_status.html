@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %} Editar estado {% endblock %}
+{% block content %}
+<div class="container">
+<div class="title">
+    <h1>Editar estado </h1>
+</div>
+{% if error %}
+<p>{{ error }}</p>
+{% endif %}
+<div class="content_box">
+    <div class="data_container">
+        <h3>ID: {{ status.id }}</p>
+        <form action="" method="post">
+          {% csrf_token %}
+          {{ form.as_p }}
+          <button class="save_button" type="submit"><p><i class="fa-solid fa-floppy-disk"></i> Guardar</p></button>
+        </form>
+    </div>
+</div>
+</div>
+{% endblock %}

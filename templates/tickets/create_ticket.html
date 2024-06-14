@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %} Crear Ticket {% endblock %}
+{% block content %}
+<div class="container">
+<div class="title">
+    <h1>Crear Ticket</h1>
+</div>
+<div class="content_box register-form">
+    <div class="data_container">
+        <div class="user_info_container">
+            <form action="" method="post">
+                {% csrf_token %}
+                <div class="form-group">
+                    {{ form.issue.label_tag }}
+                    {{ form.issue }}
+                </div>
+                <div class="form-group">
+                    {{ form.priority.label_tag }}
+                    {{ form.priority }}
+                </div>
+                <div class="form-group">
+                    {{ form.type.label_tag }}
+                    {{ form.type }}
+                </div>
+                <div class="form-group">
+                    {{ form.status.label_tag }}
+                    {{ form.status }}
+                </div>
+                <div class="form-group">
+                    {{ form.customer.label_tag }}
+                    {{ form.customer }}
+                </div>
+                <div class="form-group">
+                    {{ form.observation.label_tag }}
+                    {{ form.observation }}
+                </div>
+                <div class="form-group">
+                    {{ form.asigned_area.label_tag }}
+                    {{ form.asigned_area }}
+                </div>
+                <button type="submit">Guardar</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% if error %}
+    <p>{{ error }}</p> 
+{% endif %}
+
+
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %} Datos Cliente {% endblock %}
+{% block content %} 
+
+<div class="container">
+   <div class="title">
+      <h1>Detalle Cliente</h1>
+   </div>   
+
+   <div class="content_box">
+      <div class="data_container">
+         <div class="column">
+   
+            <p>Nombre: {{ customer.user.first_name }} </p>
+            <p>Apellido: {{ customer.user.last_name }}</p>
+            <p>RUT: {{ customer.rut }}</p>
+            <p>Teléfono:{{ customer.phone }}</p>
+            <p>Usuario: {{ customer.user.username }} </p>
+   
+            {% if customer.user.is_active %}
+               <p>Estado: Activo</p>
+            {% else %}
+               <p>Estado: Inactivo</p>
+            {% endif %}
+      
+           {% if customer.user.is_active %}
+           <form action="{% url 'deactivate_user' customer.id %}" method="POST">
+               {% csrf_token %}
+               {{ form.as_p }}
+               <button>Desactivar Usuario</button>
+            </form>
+            {% else %}
+            <form action="{% url 'activate_user' customer.id %}" method="POST">
+               {% csrf_token %}
+               {{ form.as_p }}
+               <button>Reactivar Usuario</button>
+            </form>
+            {% endif %}
+        </div>
+      </div>   
+   </div>
+</div>
+
+{% endblock %}

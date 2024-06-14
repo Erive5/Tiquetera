@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %} Datos ticket {% endblock %}
+{% block user_type %} {{user_type}} {% endblock %}
+{% block content %} 
+<div class="container">
+    <div class="title">
+        <h1>Ticket </h1>        
+    </div>
+    <div class="content_box">
+        <div class="data_container">
+            <div class="column">
+                <p>Id ticket: {{ ticket.id }}</p>
+                <p>Visualizando como: {{ user_type }}</p>
+                <p>Agente apertura: {{ ticket.opening_agent }}</p>
+                <p>Fecha apertura: {{ ticket.opening_date|date:"d/m/Y" }}</p>
+                <p>Asunto: {{ ticket.issue }}</p>
+                <p>Cliente: {{ ticket.customer }} </p>
+                <p>Observación: {{ ticket.observation }}</p>
+                <p>Prioridad: {{ ticket.priority }}</p>
+                <p>Tipo: {{ ticket.type }}</p>
+                <p>Estado: {{ ticket.status }}</p>
+                <p>Area asignada: {{ ticket.asigned_area }}</p>
+                {% if ticket.solution and ticket.closure_agent and ticket.closing_date %}
+                <p>Solución: {{ ticket.solution }}</p>
+                <p>Agente de Cierre: {{ ticket.closure_agent }}</p>
+                <p>Fecha de Cierre: {{ ticket.closing_date|date:"d/m/Y" }}</p>
+                {% endif %}
+                
+                {% if user_type == "Administrador" or user_type == "Agente" %}
+                <div class="button_container">
+                    <form method="post" action="{% url 'solve_button' ticket.id %}">
+                        {% csrf_token %}
+                        {% if ticket.status.status_description != 'Resuelto' %}
+                        <button class="solve_button" type="submit"><i class="fa-solid fa-check"></i> Resolver</button>
+                        {% endif %}
+                    </form>
+                    <form id="button_box_edit" method="get" action="{% url 'edit_ticket' ticket.id %}">
+                        <button class="edit_button" type="submit"><i class="fa-solid fa-pen"></i></button>
+                    </form>
+                    <form id="button_box_delete" method="post" action="{% url 'delete_ticket' ticket.id %}">
+                        {% csrf_token %}
+                        <button class="delete_button" type="submit"><i class="fa-solid fa-trash"></i></button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
