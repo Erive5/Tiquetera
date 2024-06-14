@@ -30,7 +30,7 @@
                 <div class="button_container">
                     <form method="post" action="{% url 'solve_button' ticket.id %}">
                         {% csrf_token %}
-                        {% if ticket.status.status_description != 'Resuelto' %}
+                        {% if ticket.status.status_description != 'Resuelto' and ticket.solution != None %}
                         <button class="solve_button" type="submit"><i class="fa-solid fa-check"></i> Resolver</button>
                         {% endif %}
                     </form>

@@ -245,6 +245,7 @@ def create_ticket(request):
 def ticket_view(request, id):
     user_type = get_user_type(request)
     ticket = get_object_or_404 (Ticket, id=id)
+    
     return render(request, 'tickets/ticket_view.html', {'ticket': ticket, 'user_type':user_type})
 
 @login_required   
