@@ -1,7 +1,7 @@
 # Tiquetera
 `<link>` : https://tiquetera.onrender.com/
 
-<img src="https://github.com/Erive5/Tiquetera/blob/master/static/staticfiles/img/2.png" alt="Logo del proyecto" width="100" height="100">
+<img src="https://github.com/Erive5/Tiquetera/blob/main/static/img/2.png" alt="Logo del proyecto" width="100" height="100">
 
 ## Descripción del proyecto
 
