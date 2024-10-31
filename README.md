@@ -1,7 +1,7 @@
 # Tiquetera
 `<link>` : https://tiquetera.onrender.com/
 
-<img src="https://github.com/Erive5/Tiquetera/blob/master/staticfiles/img/2.png" alt="Logo del proyecto" width="100" height="100">
+<img src="https://github.com/Erive5/Tiquetera/blob/master/static/staticfiles/img/2.png" alt="Logo del proyecto" width="100" height="100">
 
 ## Descripción del proyecto
 
@@ -24,7 +24,7 @@ Además, se han creado 3 usuarios por defecto para probar el sistema desde los d
 > Tabla de estructura y mejoras del proyecto
 
 | Aspectos  | Características |
-| ------------- | ------------- | ------------- |
+| ------------- | ------------- |
 | Base de datos | `<PostgreSQL>` `<SQLite3>` |
 | Framework Django | `<Model View Template>` |
 | Diseño | `<Minimalista>` |
