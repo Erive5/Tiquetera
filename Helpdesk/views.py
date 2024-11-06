@@ -122,24 +122,20 @@ def customer_signup(request):
                                                         'error': 'Constraseñas no coinciden.'})
         
 def customer_complete_profile(request): 
-    agent_session = request.user.is_authenticated # verificar si hay una sesión iniciada.
     user_data = {
         'username': request.user.username,
         'first_name': request.user.first_name,
         'last_name': request.user.last_name,
     }
     if request.method == 'GET':
-        return render(request, 'customer/customer_complete_profile.html', {'form': customer_profile_form, 'user_data':user_data, 'agent_session': agent_session})
+        return render(request, 'customer/customer_complete_profile.html', {'form': customer_profile_form, 'user_data':user_data})
     else: 
         try:
             form = customer_profile_form(request.POST)
             new_profile = form.save(commit = False)
             new_profile.user = request.user
             new_profile = form.save()
-            if agent_session:
-                return redirect('customers') # retorna a lista clientes si hay sesión iniciada
-            else:
-                return redirect('tickets') # retorna a tickets del cliente, iniciando su sesión
+            return redirect('tickets') # retorna a tickets del cliente, iniciando su sesión
         except ValueError:
             return render(request, 'customer/customer_complete_profile.html', {
                 'form': customer_profile_form, 
