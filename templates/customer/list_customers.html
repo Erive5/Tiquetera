@@ -27,11 +27,11 @@
           <input type="text" name="first_name" placeholder="Nombre">
           <input type="text" name="last_name" placeholder="Apellido">
           <input type="date" name="join_date" placeholder="Fecha de registro">
-        
           <button class="filter_button" type="submit"><p><i class="fa-solid fa-magnifying-glass"></i> Filtrar</p></button>
       </div> <!-- input container end-->
     </div>  <!-- filters container end -->
   </form>
+  <button class="create_button"><a href="{% url 'customer_signup' %}"><i class="fa-solid fa-plus"></i> Registrar cliente</a></button>
       <table class="ticket_table">
         <thead>
           <tr>

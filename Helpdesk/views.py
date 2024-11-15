@@ -103,44 +103,63 @@ def modify_password(request, id):
 def customer_signup(request):
     if request.method == 'GET':
         return render (request, 'customer/customer_signup.html', {'form': customer_creation_form})
-    else:
-        if request.POST['password1'] == request.POST['password2']:
-            try:    
-                user = User.objects.create_user(
-                    username=request.POST['username'], 
-                    password=request.POST['password1'], 
-                    first_name = request.POST ['first_name'], 
-                    last_name = request.POST['last_name'],
-                )
-                user.save()
-                login(request, user)
-                return redirect('customer_complete_profile')
-            except:
-                return render (request, 'customer/customer_signup.html', {'form': customer_creation_form,
-                                                        'error': 'El usuario ya existe.'})
-        return render (request, 'customer/customer_signup.html', {'form': customer_creation_form,
-                                                        'error': 'Constraseñas no coinciden.'})
-        
-def customer_complete_profile(request): 
-    user_data = {
-        'username': request.user.username,
-        'first_name': request.user.first_name,
-        'last_name': request.user.last_name,
-    }
+    try:    
+        new_user = User.objects.create_user(
+            username=request.POST['username'], 
+            password=request.POST['password1'], 
+            first_name=request.POST['first_name'].capitalize(), 
+            last_name=request.POST['last_name'].capitalize()
+        )
+        new_user.save()
+        if not request.user.is_authenticated:
+            print("usuario valido")
+            login(request, new_user)
+            return redirect('customer_complete_profile', customer_id = new_user.id)
+        return redirect('customer_complete_profile', customer_id=new_user.id) 
+    except Exception as e:
+        err= e
+        return render(request, 'customer/customer_signup.html', {'form': customer_creation_form,
+                                                                'error': err})
+
+def customer_complete_profile(request, customer_id=None): 
+    user = request.user
+    print(user)
+    if user.is_staff:  # Si es un agente
+        # Si es un agente, obtenemos los datos del cliente desde la URL
+        customer = get_object_or_404(User, id=customer_id)
+        user_data = {
+            'username': customer.username,
+            'first_name': customer.first_name,
+            'last_name': customer.last_name,
+        }
+    else:  # Si no es un agente, usamos los datos del usuario autenticado
+        user_data = {
+            'username': request.user.username,
+            'first_name': request.user.first_name,
+            'last_name': request.user.last_name,
+        }
+
     if request.method == 'GET':
-        return render(request, 'customer/customer_complete_profile.html', {'form': customer_profile_form, 'user_data':user_data})
-    else: 
+        return render(request, 'customer/customer_complete_profile.html', {'form': customer_profile_form, 'user_data': user_data})
+    else:
         try:
             form = customer_profile_form(request.POST)
-            new_profile = form.save(commit = False)
-            new_profile.user = request.user
-            new_profile = form.save()
-            return redirect('tickets')
+            new_profile = form.save(commit=False)
+            if request.user.is_staff:
+                # Si es un agente, asignamos el cliente en el perfil que está creando
+                new_profile.user = customer
+            else:
+                # Si es el cliente mismo, asignamos el perfil al usuario autenticado
+                new_profile.user = request.user
+            new_profile.save()
+            return redirect('tickets')  # Redirige al cliente al panel de tickets
+
         except ValueError:
             return render(request, 'customer/customer_complete_profile.html', {
-                'form': customer_profile_form, 
+                'form': customer_profile_form,
                 'user_data': user_data,
-                'error': 'Por favor, ingresa datos válidos'})
+                'error': 'Por favor, ingresa datos válidos.'
+            })
 
 @login_required
 def list_customers(request):
@@ -185,8 +204,8 @@ def agent_signup(request):
                 user = User.objects.create_user(
                     username=request.POST['username'], 
                     password=request.POST['password1'], 
-                    first_name= request.POST ['first_name'], 
-                    last_name= request.POST['last_name'],
+                    first_name= request.POST ['first_name'].capitalize(), 
+                    last_name= request.POST['last_name'].capitalize(),
                 )
                 user.is_staff = True
                 user.save()
