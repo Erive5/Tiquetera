@@ -526,10 +526,7 @@ a {
     text-decoration: underline;
 }
 
-
-
 /* Dropdown */
-
 .dropdown form {
     display: none;
     margin-top: 10px;
@@ -624,10 +621,6 @@ button p {
 
 #logout_button {
     font-size: 30px;
-}
-
-#logout_button:hover {
-    font-size: 35px;
 }
 
 .delete_button {
