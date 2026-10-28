@@ -753,7 +753,7 @@ def solve_ticket(request,id):
             ticket = form.save()
             return redirect('ticket_view', id=id)
         else:
-            return render(request, {'form': form, 'error': 'Hubo un problema con el formulario'})
+            return render(request, 'tickets/solve_ticket.html', {'ticket': ticket, 'form': form, 'error': 'Hubo un problema con el formulario'})
     else:
         form = opened_ticket_form(instance=ticket)
     return render(request, 'tickets/solve_ticket.html', {'ticket': ticket, 'form': form})

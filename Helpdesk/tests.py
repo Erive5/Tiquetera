@@ -2238,6 +2238,26 @@ class EditSolveTicketAuthorizationTests(TestCase):
         self.assertEqual(ticket.closure_agent_id, jefe_profile.id)
         self.assertEqual(ticket.status.status_description, "Resuelto")
 
+    def test_solve_ticket_formulario_invalido_no_devuelve_500(self):
+        # F-3.3-1 (Fase 3.3): el render() del branch invalido no pasaba el
+        # nombre de la plantilla, y Django lanzaba TypeError al intentar
+        # resolverla desde el dict de contexto. "solution" es obligatorio
+        # (TextField sin blank=True) y el formulario carece de closure_agent
+        # valido en este POST, asi que ambos hacen que sea invalido a proposito.
+        jefe_user, jefe_profile = self._jefe("es9")
+        _, cliente_profile = self._cliente("es10")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.post(reverse("solve_ticket", args=[ticket.id]), {
+            "solution": "", "closure_agent": "",
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Hubo un problema con el formulario")
+        ticket.refresh_from_db()
+        self.assertNotEqual(ticket.status.status_description, "Resuelto")
+        self.assertIsNone(ticket.closure_agent)
+
     # ---- solve_button ----
 
     def test_solve_button_requiere_post_get_devuelve_405(self):
