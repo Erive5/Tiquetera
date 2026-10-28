@@ -361,53 +361,132 @@ def agent_view(request, id):
 @login_required
 @permission_required('Helpdesk.register_agent', raise_exception=True)
 def agent_signup(request):
+    # 3.2.4: agent_signup tenia el mismo patron de bugs que customer_signup
+    # antes de 3.2.2 (ver claude/rbac-progreso.md, "Riesgos abiertos"):
+    #   (a) El GET pasaba la CLASE customer_creation_form (no una instancia)
+    #       a la plantilla -> AttributeError al renderizar (label_tag no
+    #       existe en un campo de clase sin instanciar). El formulario de
+    #       registro de agentes nunca pudo cargarse por GET.
+    #   (b) El POST validaba password1/password2 a mano
+    #       (`request.POST['password1'] == request.POST['password2']`) y
+    #       creaba el User directamente con User.objects.create_user(...),
+    #       sin pasar nunca por el formulario real ni por
+    #       AUTH_PASSWORD_VALIDATORS (longitud minima, comunes, solo
+    #       numericas, similitud con el usuario) - una contraseña como "x"
+    #       se aceptaba sin problema.
+    #   (c) El username duplicado (y cualquier otro error, relacionado o
+    #       no) se atrapaba con un `except:` desnudo alrededor de la
+    #       creacion + asignacion de grupo.
+    # Se corrige reutilizando customer_creation_form (hereda de
+    # UserCreationForm, misma clase ya usada por customer_signup desde
+    # 3.2.2) en vez de leer el POST a mano - activa gratis la coincidencia
+    # password1/password2, los AUTH_PASSWORD_VALIDATORS reales y un error
+    # de formulario legible para username duplicado (clean_username, antes
+    # de tocar la base), sin exponer ninguna excepcion interna.
     if request.method == 'GET':
-        return render (request, 'agents/agent_signup.html', {'form': customer_creation_form})
-    else:
-        if request.POST['password1'] == request.POST['password2']:
-            try:
-                with transaction.atomic():
-                    user = User.objects.create_user(
-                        username=request.POST['username'],
-                        password=request.POST['password1'],
-                        first_name= request.POST ['first_name'].capitalize(),
-                        last_name= request.POST['last_name'].capitalize(),
-                    )
-                    user.is_staff = True
-                    user.save()
-                    set_user_role_group(user, ROLE_AGENTE)
-                new_agent = user
-                return redirect('agent_complete_profile', id = new_agent.id)
-            except:
-                return render (request, 'agents/agent_signup.html', {'form': customer_creation_form,
-                                                        'error': 'El usuario ya existe.'})
-        return render (request, 'agents/agent_signup.html', {'form': customer_creation_form,
-                                                        'error': 'Constraseñas no coinciden.'})
+        return render(request, 'agents/agent_signup.html', {'form': customer_creation_form()})
+
+    form = customer_creation_form(request.POST)
+    if not form.is_valid():
+        # Un formulario invalido nunca llega a crear nada. agent_signup.html
+        # ya tenia un bloque {% if error %} (antes usado para los 2
+        # mensajes fijos de la validacion manual) - se reutiliza para
+        # mostrar los errores reales del formulario sin tocar el template.
+        errors = [msg for field_errors in form.errors.values() for msg in field_errors]
+        return render(request, 'agents/agent_signup.html', {
+            'form': form,
+            'error': ' '.join(errors) if errors else None,
+        })
+
+    with transaction.atomic():
+        # Meta de UserCreationForm solo declara 'username': form.save()
+        # hashea la contraseña y persiste username, pero first_name/
+        # last_name (declarados aparte en customer_creation_form) se
+        # asignan a mano antes de guardar - mismo patron que
+        # customer_signup desde 3.2.2.
+        new_user = form.save(commit=False)
+        new_user.first_name = form.cleaned_data['first_name'].capitalize()
+        new_user.last_name = form.cleaned_data['last_name'].capitalize()
+        # 3.2.4, hallazgo adicional: el codigo anterior tambien hacia
+        # `user.is_staff = True` aqui. Desde la migracion a RBAC (2.2B en
+        # adelante) ninguna vista de negocio depende de is_staff para
+        # distinguir Agente/Jefe de Mesa - la unica fuente de verdad es el
+        # grupo RBAC (set_user_role_group, abajo); el queryset de
+        # closure_agent que si dependia de is_staff ya se migro a grupos
+        # en 2.4. Mantenerlo solo reintroducia el concepto que la
+        # migracion a RBAC retiro explicitamente (2.2D lo retiro del Jefe
+        # de Mesa demo por la misma razon) - se elimina aqui tambien para
+        # Agente, sin que ninguna vista o queryset actual dependa de el.
+        new_user.save()
+        set_user_role_group(new_user, ROLE_AGENTE)
+
+    # No se llama login() aqui, igual que en el codigo anterior: la sesion
+    # de quien registra (un Jefe de Mesa autenticado - el unico rol con
+    # 'register_agent') se mantiene intacta, nunca se autentica como el
+    # nuevo Agente.
+    return redirect('agent_complete_profile', id=new_user.id)
 
 @login_required
 @permission_required('Helpdesk.register_agent', raise_exception=True)
 def agent_complete_profile(request, id):
     new_agent = get_object_or_404(User, pk=id)
+
+    # 3.2.4, hallazgo adicional: la vista no verificaba que `id` apuntara
+    # realmente a un Agente recien registrado por agent_signup - un Jefe de
+    # Mesa (unico rol con 'register_agent') podia apuntarla a CUALQUIER
+    # User existente (otro Jefe de Mesa, un Cliente, etc.) y crear un
+    # Profile para el con area incluida. Mismo tipo de hallazgo que motivo
+    # la correccion de customer_complete_profile en 2.3 (aunque alli era un
+    # IDOR explotable por cualquier Agente; aqui el alcance es menor porque
+    # solo llega un Jefe de Mesa, que ya administra agentes por diseño).
+    # Mismo criterio que customer_view/agent_view (Bloque 3): un usuario
+    # que no sea del tipo correcto no existe para esta vista -> 404.
+    if not user_in_group(new_agent, ROLE_AGENTE):
+        raise Http404
+
     user_data = {
         'username': new_agent.username,
         'first_name': new_agent.first_name,
         'last_name': new_agent.last_name,
     }
 
+    # 3.2.4, hallazgo adicional: si el perfil ya existe (registro ya
+    # completado antes), el codigo anterior igual renderizaba el formulario
+    # vacio por GET y, en un POST posterior, el segundo form.save() violaba
+    # la constraint OneToOne de Profile.user -> excepcion no capturada (no
+    # es ValueError, asi que el except existente no la atrapaba). Mismo
+    # criterio que customer_complete_profile (2.3): flujo ya terminado, no
+    # un intento de acceso indebido - se redirige sin reintentar el guardado.
+    existing_profile = Profile.objects.filter(user=new_agent).first()
+    if existing_profile is not None:
+        return redirect('agent_view', id=existing_profile.id)
+
     if request.method == 'GET':
-        return render(request, 'agents/agent_complete_profile.html', {'form': agent_profile_form, 'user_data':user_data })
-    else:
-        try:
-            form = agent_profile_form(request.POST)
-            new_profile = form.save(commit = False)
+        return render(request, 'agents/agent_complete_profile.html', {
+            'form': agent_profile_form(),
+            'user_data': user_data,
+        })
+
+    form = agent_profile_form(request.POST)
+    if not form.is_valid():
+        return render(request, 'agents/agent_complete_profile.html', {
+            'form': form,
+            'user_data': user_data,
+            'error': 'Por favor, ingresa datos válidos'})
+
+    try:
+        with transaction.atomic():
+            new_profile = form.save(commit=False)
             new_profile.user = new_agent
-            new_profile = form.save()
-            return redirect('agent_view', id = new_profile.id)
-        except ValueError:
-            return render(request, 'agents/agent_complete_profile.html', {
-                'form': agent_profile_form,
-                'user_data':user_data,
-                'error': 'Por favor, ingresa datos válidos'})
+            new_profile.save()
+    except IntegrityError:
+        # Defensa ante una carrera infrecuente (dos requests casi
+        # simultaneas completando el mismo perfil) - mismo patron que
+        # customer_complete_profile (2.3).
+        existing_profile = Profile.objects.get(user=new_agent)
+        return redirect('agent_view', id=existing_profile.id)
+
+    return redirect('agent_view', id=new_profile.id)
 # TICKET
 @login_required
 def create_ticket(request):

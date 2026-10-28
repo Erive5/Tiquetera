@@ -287,7 +287,7 @@ class SignupViewGroupAssignmentTests(TestCase):
         set_user_role_group(caller, ROLE_JEFE_DE_MESA)
         self.client.force_login(caller)
         self.client.post(reverse("agent_signup"), {
-            "username": "nuevo_agente@test.cl", "password1": "x", "password2": "x",
+            "username": "nuevo_agente@test.cl", "password1": "Cu3nta$ecura99", "password2": "Cu3nta$ecura99",
             "first_name": "A", "last_name": "B",
         })
         user = User.objects.get(username="nuevo_agente@test.cl")
@@ -692,7 +692,7 @@ class AgentRegistrationAndUserStatusRealPermissionTests(TestCase):
         set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
         self.client.force_login(jefe)
         resp = self.client.post(reverse("agent_signup"), {
-            "username": "nuevo_agente2@test.cl", "password1": "x", "password2": "x",
+            "username": "nuevo_agente2@test.cl", "password1": "Cu3nta$ecura99", "password2": "Cu3nta$ecura99",
             "first_name": "A", "last_name": "B",
         })
         self.assertEqual(resp.status_code, 302)
@@ -3121,3 +3121,210 @@ class CustomerWithoutProfileTests(TestCase):
         self.client.force_login(jefe)
         resp = self.client.get(reverse("tickets"))
         self.assertEqual(resp.status_code, 200)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 3.2.4 (registro seguro de agentes - agent_signup /
+# agent_complete_profile). Mismo patron de hallazgos que customer_signup
+# tenia antes de 3.2.2, mas dos hallazgos propios reportados y corregidos
+# en este incremento (user.is_staff = True vestigial en agent_signup; falta
+# de verificacion de tipo + idempotencia en agent_complete_profile). No
+# toca customer_signup, los flujos de tickets ni ninguna plantilla.
+# ---------------------------------------------------------------------------
+
+class AgentSignupValidationTests(TestCase):
+    VALID_PASSWORD = "Cu3nta$ecura99"
+
+    def setUp(self):
+        call_command("seed_roles")
+        self.jefe = User.objects.create_user(username="jefe_3_2_4@test.cl", password="x")
+        set_user_role_group(self.jefe, ROLE_JEFE_DE_MESA)
+
+    def _post(self, client, **overrides):
+        data = {
+            "username": "agente_3_2_4@test.cl",
+            "password1": self.VALID_PASSWORD,
+            "password2": self.VALID_PASSWORD,
+            "first_name": "A",
+            "last_name": "B",
+        }
+        data.update(overrides)
+        return client.post(reverse("agent_signup"), data)
+
+    # --- Camino feliz ---
+
+    def test_get_muestra_el_formulario(self):
+        # Antes de este incremento, el GET pasaba la *clase*
+        # customer_creation_form (no una instancia) a la plantilla, que
+        # intentaba acceder a form.username.label_tag -> AttributeError.
+        # El formulario de registro de agentes nunca pudo cargarse.
+        self.client.force_login(self.jefe)
+        resp = self.client.get(reverse("agent_signup"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_registro_valido_crea_usuario_grupo_agente_y_redirige_a_completar_perfil(self):
+        self.client.force_login(self.jefe)
+        resp = self._post(self.client)
+        self.assertEqual(resp.status_code, 302)
+        user = User.objects.get(username="agente_3_2_4@test.cl")
+        self.assertEqual(set(user.groups.values_list("name", flat=True)), {ROLE_AGENTE})
+        self.assertTrue(user.check_password(self.VALID_PASSWORD))
+        self.assertIn(reverse("agent_complete_profile", args=[user.id]), resp.url)
+
+    def test_registro_valido_no_asigna_is_staff(self):
+        # Hallazgo adicional de este incremento: el codigo anterior hacia
+        # `user.is_staff = True` sin que ninguna vista de negocio dependa
+        # de ese flag desde la migracion a RBAC (2.2B/2.4) - se elimina
+        # para no reintroducir una fuente de autorizacion paralela al
+        # grupo RBAC.
+        self.client.force_login(self.jefe)
+        self._post(self.client)
+        user = User.objects.get(username="agente_3_2_4@test.cl")
+        self.assertFalse(user.is_staff)
+
+    # --- Negativos: nunca deben crear un usuario ---
+
+    def test_password2_no_coincide_no_crea_usuario(self):
+        self.client.force_login(self.jefe)
+        resp = self._post(self.client, password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="agente_3_2_4@test.cl").exists())
+        self.assertFalse(resp.context["form"].is_valid())
+
+    def test_password_debil_no_crea_usuario(self):
+        resp_client = self.client
+        resp_client.force_login(self.jefe)
+        resp = self._post(resp_client, password1="password", password2="password")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="agente_3_2_4@test.cl").exists())
+
+    def test_password_solo_numerica_no_crea_usuario(self):
+        self.client.force_login(self.jefe)
+        resp = self._post(self.client, password1="12345678", password2="12345678")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="agente_3_2_4@test.cl").exists())
+
+    def test_username_duplicado_no_crea_segundo_usuario_ni_expone_error_de_bd(self):
+        self.client.force_login(self.jefe)
+        self._post(self.client)
+        self.assertEqual(User.objects.filter(username="agente_3_2_4@test.cl").count(), 1)
+
+        resp = self._post(self.client)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(User.objects.filter(username="agente_3_2_4@test.cl").count(), 1)
+        self.assertNotIn("UNIQUE", resp.content.decode())
+        self.assertIn("username", resp.context["form"].errors)
+
+    # --- Permisos ---
+
+    def test_sin_permiso_register_agent_403_sin_mutacion(self):
+        attacker = User.objects.create_user(username="sin_permiso_as@test.cl", password="x")
+        self.client.force_login(attacker)
+        resp = self._post(self.client)
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(User.objects.filter(username="agente_3_2_4@test.cl").exists())
+
+    # --- Sesion de quien registra ---
+
+    def test_registro_conserva_la_sesion_del_jefe_de_mesa_que_registra(self):
+        client = Client()
+        client.force_login(self.jefe)
+        resp = self._post(client)
+        self.assertEqual(resp.status_code, 302)
+        nuevo = User.objects.get(username="agente_3_2_4@test.cl")
+        self.assertNotEqual(nuevo.id, self.jefe.id)
+        # login() no debe llamarse en agent_signup: la sesion sigue siendo
+        # la de quien registra, nunca la del nuevo Agente.
+        self.assertEqual(int(client.session["_auth_user_id"]), self.jefe.id)
+
+    def test_registro_invalido_no_toca_la_sesion_del_jefe_de_mesa(self):
+        client = Client()
+        client.force_login(self.jefe)
+        resp = self._post(client, password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="agente_3_2_4@test.cl").exists())
+        self.assertEqual(int(client.session["_auth_user_id"]), self.jefe.id)
+
+
+class AgentCompleteProfileAdditionalTests(TestCase):
+    """Complementa AgentCompleteProfileAuthorizationTests (2.2A bloque 2)
+    con los casos agregados/corregidos en 3.2.4: GET real, formulario
+    invalido, area asignada, verificacion de tipo y re-visita tras
+    completar el perfil."""
+
+    def setUp(self):
+        call_command("seed_roles")
+        self.jefe = User.objects.create_user(username="jefe_acp_3_2_4@test.cl", password="x")
+        set_user_role_group(self.jefe, ROLE_JEFE_DE_MESA)
+        self.new_agent_user = User.objects.create_user(
+            username="nuevo_sin_perfil_3_2_4@test.cl", password="x",
+        )
+        set_user_role_group(self.new_agent_user, ROLE_AGENTE)
+
+    def test_get_muestra_el_formulario(self):
+        self.client.force_login(self.jefe)
+        resp = self.client.get(reverse("agent_complete_profile", args=[self.new_agent_user.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_registro_valido_guarda_rut_phone_y_area(self):
+        area = Area.objects.create(area_description="Soporte 3.2.4")
+        self.client.force_login(self.jefe)
+        resp = self.client.post(
+            reverse("agent_complete_profile", args=[self.new_agent_user.id]),
+            {"rut": "9-1", "phone": "910", "area": area.id},
+        )
+        self.assertEqual(resp.status_code, 302)
+        profile = Profile.objects.get(user=self.new_agent_user)
+        self.assertEqual(profile.rut, "9-1")
+        self.assertEqual(profile.phone, "910")
+        self.assertEqual(profile.area_id, area.id)
+
+    def test_formulario_invalido_no_crea_profile(self):
+        # rut/phone son obligatorios en el modelo; un POST sin ellos no
+        # debe crear un Profile a medio llenar, y debe devolver 200 (nunca
+        # un 500 por excepcion no capturada).
+        self.client.force_login(self.jefe)
+        resp = self.client.post(
+            reverse("agent_complete_profile", args=[self.new_agent_user.id]),
+            {"rut": "", "phone": ""},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Profile.objects.filter(user=self.new_agent_user).exists())
+
+    def test_target_que_no_es_agente_da_404(self):
+        # Hallazgo adicional: antes no se verificaba que `id` apuntara a un
+        # Agente - un Jefe de Mesa podia completar el perfil de cualquier
+        # User existente (p.ej. un Cliente) con datos de Agente, incluida
+        # un area.
+        cliente = User.objects.create_user(username="cliente_acp_3_2_4@test.cl", password="x")
+        set_user_role_group(cliente, ROLE_CLIENTE)
+        self.client.force_login(self.jefe)
+        resp = self.client.post(
+            reverse("agent_complete_profile", args=[cliente.id]),
+            {"rut": "9-2", "phone": "920"},
+        )
+        self.assertEqual(resp.status_code, 404)
+        self.assertFalse(Profile.objects.filter(user=cliente).exists())
+
+    def test_revisitar_perfil_ya_completo_redirige_sin_crashear(self):
+        # Hallazgo adicional: antes, revisitar esta URL por GET/POST
+        # despues de completar el perfil terminaba en una excepcion de
+        # base de datos no capturada (OneToOneField ya ocupado) en vez de
+        # un redirect limpio - mismo criterio que customer_complete_profile
+        # (2.3): flujo ya terminado, no un intento de acceso indebido.
+        profile = Profile.objects.create(user=self.new_agent_user, rut="9-3", phone="930")
+        self.client.force_login(self.jefe)
+
+        resp_get = self.client.get(reverse("agent_complete_profile", args=[self.new_agent_user.id]))
+        self.assertEqual(resp_get.status_code, 302)
+        self.assertIn(reverse("agent_view", args=[profile.id]), resp_get.url)
+
+        resp_post = self.client.post(
+            reverse("agent_complete_profile", args=[self.new_agent_user.id]),
+            {"rut": "9-9", "phone": "999"},
+        )
+        self.assertEqual(resp_post.status_code, 302)
+        profile.refresh_from_db()
+        # Los datos originales no se sobreescriben.
+        self.assertEqual(profile.rut, "9-3")
+        self.assertEqual(profile.phone, "930")
