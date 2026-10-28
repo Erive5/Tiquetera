@@ -10,6 +10,7 @@ from django.db.models import Q
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseNotAllowed
 
+from django.views.decorators.http import require_http_methods
 from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, set_user_role_group
 
 # USUARIOS
@@ -71,19 +72,29 @@ def activate_user(request, id):
         # Redirigir a la página de listado de agentes después de activar al usuario
         return redirect('agents')
 
+@require_http_methods(["GET", "POST"])
+@login_required
 def modify_user_data(request, id):
-   if request.method == 'GET':
-       profile = get_object_or_404(Profile, id=id)
-       user = profile.user
-       form = modify_user_data_form (instance=profile, user=user)
-       return render(request, 'modify_user_data.html', {'form':form, 'profile':profile})
-   else:
-       profile= get_object_or_404(Profile, id=id)
-       form = modify_user_data_form (request.POST, instance=profile)
-       form.save()
-       return redirect('my_profile')
+    profile = get_object_or_404(Profile, id=id)
+    if profile.user != request.user:
+        raise PermissionDenied
+    if request.method == 'GET':
+        user = profile.user
+        form = modify_user_data_form(instance=profile, user=user)
+        return render(request, 'modify_user_data.html', {'form': form, 'profile': profile})
+    else:
+        form = modify_user_data_form(request.POST, instance=profile)
+        if form.is_valid():
+            form.save()
+            return redirect('my_profile')
+        return render(request, 'modify_user_data.html', {'form': form, 'profile': profile})
 
+@require_http_methods(["GET", "POST"])
+@login_required
 def modify_password(request, id):
+    profile = get_object_or_404(Profile, id=id)
+    if profile.user != request.user:
+        raise PermissionDenied
     user = request.user
     form = modify_password_form(request.POST, instance=user)
     if request.method == 'POST':
@@ -325,10 +336,10 @@ def solve_button (request, id):
 
 @login_required
 def delete_ticket(request, id):
-    ticket = get_object_or_404(Ticket, id=id)
-    if request.method == 'POST':
-        ticket.delete()
-        return redirect('tickets')
+    # Deshabilitado para todos los roles (incluido superusuario): la matriz
+    # RBAC aprobada no asigna 'delete_ticket' a ningun grupo. Se preserva la
+    # trazabilidad; una anulacion logica se evaluara en una mejora futura.
+    raise PermissionDenied
 
 @login_required
 def list_tickets(request):

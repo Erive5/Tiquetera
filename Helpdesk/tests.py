@@ -277,3 +277,169 @@ class SignupViewGroupAssignmentTests(TestCase):
         })
         user = User.objects.get(username="nuevo_agente@test.cl")
         self.assertEqual(set(user.groups.values_list("name", flat=True)), {ROLE_AGENTE})
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2A (bloque prioritario): modify_user_data, modify_password,
+# delete_ticket deshabilitado para todos los roles.
+# ---------------------------------------------------------------------------
+
+from Helpdesk.models import Area, Priority, Status, Ticket, Type
+
+
+class ModifyUserDataAuthorizationTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="dueño@test.cl", password="x")
+        self.owner_profile = Profile.objects.create(user=self.owner, rut="1-1", phone="111")
+        self.other = User.objects.create_user(username="otro@test.cl", password="x")
+        self.other_profile = Profile.objects.create(user=self.other, rut="2-2", phone="222")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.post(reverse("modify_user_data", args=[self.owner_profile.id]), {"phone": "999"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/signin", resp.url)
+        self.owner_profile.refresh_from_db()
+        self.assertEqual(self.owner_profile.phone, "111")
+
+    def test_authenticated_user_cannot_modify_another_profile_get(self):
+        self.client.force_login(self.other)
+        resp = self.client.get(reverse("modify_user_data", args=[self.owner_profile.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_authenticated_user_cannot_modify_another_profile_post(self):
+        self.client.force_login(self.other)
+        resp = self.client.post(
+            reverse("modify_user_data", args=[self.owner_profile.id]),
+            {"phone": "999", "username": "hackeado", "first_name": "x", "last_name": "y"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.owner_profile.refresh_from_db()
+        self.assertEqual(self.owner_profile.phone, "111")
+        self.owner.refresh_from_db()
+        self.assertEqual(self.owner.username, "dueño@test.cl")
+
+    def test_owner_can_view_own_profile_form(self):
+        self.client.force_login(self.owner)
+        resp = self.client.get(reverse("modify_user_data", args=[self.owner_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_owner_can_modify_own_profile(self):
+        self.client.force_login(self.owner)
+        resp = self.client.post(
+            reverse("modify_user_data", args=[self.owner_profile.id]),
+            {"phone": "999", "username": self.owner.username, "first_name": "A", "last_name": "B"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.owner_profile.refresh_from_db()
+        self.assertEqual(self.owner_profile.phone, "999")
+
+    def test_owner_invalid_data_does_not_crash_or_save(self):
+        # username es requerido por el form; si llega vacio, debe re-renderizar
+        # con errores (200) en vez de guardar basura o crashear (500).
+        self.client.force_login(self.owner)
+        resp = self.client.post(
+            reverse("modify_user_data", args=[self.owner_profile.id]),
+            {"phone": "999", "username": "", "first_name": "A", "last_name": "B"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.owner_profile.refresh_from_db()
+        self.assertEqual(self.owner_profile.phone, "111")  # sin mutar
+
+    def test_disallowed_method_returns_405(self):
+        self.client.force_login(self.owner)
+        resp = self.client.delete(reverse("modify_user_data", args=[self.owner_profile.id]))
+        self.assertEqual(resp.status_code, 405)
+
+
+class ModifyPasswordAuthorizationTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="dueño2@test.cl", password="vieja123")
+        self.owner_profile = Profile.objects.create(user=self.owner, rut="3-3", phone="333")
+        self.other = User.objects.create_user(username="otro2@test.cl", password="otra123")
+        self.other_profile = Profile.objects.create(user=self.other, rut="4-4", phone="444")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.post(reverse("modify_password", args=[self.owner_profile.id]), {})
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/signin", resp.url)
+
+    def test_authenticated_user_cannot_use_another_profiles_id_get(self):
+        self.client.force_login(self.other)
+        resp = self.client.get(reverse("modify_password", args=[self.owner_profile.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_authenticated_user_cannot_use_another_profiles_id_post(self):
+        self.client.force_login(self.other)
+        resp = self.client.post(
+            reverse("modify_password", args=[self.owner_profile.id]),
+            {"old_password": "vieja123", "new_password1": "hackeada", "new_password2": "hackeada"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.check_password("vieja123"))
+
+    def test_owner_can_view_own_form(self):
+        self.client.force_login(self.owner)
+        resp = self.client.get(reverse("modify_password", args=[self.owner_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_owner_can_change_own_password(self):
+        self.client.force_login(self.owner)
+        resp = self.client.post(
+            reverse("modify_password", args=[self.owner_profile.id]),
+            {"old_password": "vieja123", "new_password1": "nueva123", "new_password2": "nueva123"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.check_password("nueva123"))
+
+    def test_wrong_old_password_does_not_change_password(self):
+        self.client.force_login(self.owner)
+        resp = self.client.post(
+            reverse("modify_password", args=[self.owner_profile.id]),
+            {"old_password": "incorrecta", "new_password1": "nueva123", "new_password2": "nueva123"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.owner.refresh_from_db()
+        self.assertTrue(self.owner.check_password("vieja123"))
+
+    def test_disallowed_method_returns_405(self):
+        self.client.force_login(self.owner)
+        resp = self.client.delete(reverse("modify_password", args=[self.owner_profile.id]))
+        self.assertEqual(resp.status_code, 405)
+
+
+class DeleteTicketDisabledTests(TestCase):
+    def setUp(self):
+        self.customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        self.ticket = Ticket.objects.create(
+            issue="Test", priority=Priority.objects.first(), type=Type.objects.first(),
+            status=Status.objects.first(), customer=self.customer_profile, observation="obs",
+        )
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.post(reverse("delete_ticket", args=[self.ticket.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Ticket.objects.filter(id=self.ticket.id).exists())
+
+    def test_superuser_cannot_delete_via_post(self):
+        admin = User.objects.create_superuser(username="root@test.cl", password="x", email="a@a.cl")
+        self.client.force_login(admin)
+        resp = self.client.post(reverse("delete_ticket", args=[self.ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(Ticket.objects.filter(id=self.ticket.id).exists())
+
+    def test_superuser_cannot_delete_via_get(self):
+        admin = User.objects.create_superuser(username="root2@test.cl", password="x", email="a2@a.cl")
+        self.client.force_login(admin)
+        resp = self.client.get(reverse("delete_ticket", args=[self.ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(Ticket.objects.filter(id=self.ticket.id).exists())
+
+    def test_jefe_de_mesa_group_member_cannot_delete(self):
+        user = User.objects.create_user(username="jefe3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(reverse("delete_ticket", args=[self.ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(Ticket.objects.filter(id=self.ticket.id).exists())
