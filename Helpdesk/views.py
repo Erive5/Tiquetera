@@ -3,15 +3,15 @@ from .models import *
 from .forms import *
 from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.models import User
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponseNotAllowed
+from django.http import HttpResponseNotAllowed, Http404
 
 from django.views.decorators.http import require_http_methods
-from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, set_user_role_group
+from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, ROLE_JEFE_DE_MESA, set_user_role_group
 
 # USUARIOS
 def home(request):
@@ -55,6 +55,8 @@ def singout(request):
     return render(request,'home.html')
 
 @login_required
+@require_http_methods(["POST"])
+@permission_required('Helpdesk.manage_user_status', raise_exception=True)
 def deactivate_user(request, id):
     profile = get_object_or_404(Profile, id=id)
     if request.method == "POST":
@@ -64,6 +66,8 @@ def deactivate_user(request, id):
         return redirect('agents')
 
 @login_required
+@require_http_methods(["POST"])
+@permission_required('Helpdesk.manage_user_status', raise_exception=True)
 def activate_user(request, id):
     profile = get_object_or_404(Profile, id=id)
     if request.method == "POST":
@@ -179,9 +183,49 @@ def customer_complete_profile(request, customer_id=None):
                 'error': 'Por favor, ingresa datos válidos.'
             })
 
+# Clasificacion por pertenencia a grupo RBAC (Cliente/Agente/Jefe de Mesa),
+# NO por is_staff/is_superuser. get_user_type() todavia usa esos flags y no
+# se migra aqui (eso es 2.2B); is_staff puede no coincidir con el grupo real
+# (p.ej. un Jefe de Mesa con is_staff=False no debe contarse como cliente).
+# set_user_role_group() garantiza que un usuario pertenece a lo sumo a uno
+# de los 3 grupos RBAC, asi que esta clasificacion es confiable y unica.
+def _user_in_group(user, group_name):
+    return user.groups.filter(name=group_name).exists()
+
+def _agent_ticket_scope_q(agent_profile):
+    """Mismo criterio de alcance que list_tickets para un Agente. Profile.area
+    es nullable (igual que Ticket.asigned_area): si el agente no tiene area
+    asignada, Q(asigned_area=None) matchearia tickets SIN area asignada y le
+    daria acceso indebido. Por eso esa rama del OR solo se agrega cuando el
+    agente realmente tiene area."""
+    scope = Q(opening_agent=agent_profile) | Q(closure_agent=agent_profile)
+    if agent_profile.area_id is not None:
+        scope = scope | Q(asigned_area=agent_profile.area_id)
+    return scope
+
+def _agent_can_view_customer(agent_profile, customer_profile):
+    return Ticket.objects.filter(customer=customer_profile).filter(
+        _agent_ticket_scope_q(agent_profile)
+    ).exists()
+
 @login_required
 def list_customers(request):
-    customers = Profile.objects.filter(user__is_staff=False)
+    if not request.user.has_perm('Helpdesk.view_profile'):
+        raise PermissionDenied
+
+    customers = Profile.objects.filter(user__groups__name=ROLE_CLIENTE)
+
+    if not _user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        if not _user_in_group(request.user, ROLE_AGENTE):
+            # view_profile sin ser Agente ni Jefe de Mesa: ningun rol
+            # contemplado lo autoriza a listar clientes.
+            raise PermissionDenied
+        requester_profile = get_object_or_404(Profile, user=request.user)
+        scoped_ids = Ticket.objects.filter(
+            _agent_ticket_scope_q(requester_profile)
+        ).values_list('customer_id', flat=True).distinct()
+        customers = customers.filter(id__in=scoped_ids)
+
     customers = apply_agent_filters(request, customers)
     data = {
         'customers': customers,
@@ -191,13 +235,42 @@ def list_customers(request):
 @login_required
 def customer_view(request, id):
     customer = get_object_or_404 (Profile, id=id)
+
+    # Esta vista solo sirve perfiles de tipo Cliente. Se valida ANTES de
+    # cualquier bypass de rol (incluido Jefe de Mesa) y antes del acceso por
+    # propiedad: un Agente no puede abrir su propio perfil via esta vista.
+    if not _user_in_group(customer.user, ROLE_CLIENTE):
+        raise Http404
+
+    if customer.user == request.user:
+        return render(request, 'customer/customer_view.html', {'customer': customer})
+
+    if not request.user.has_perm('Helpdesk.view_profile'):
+        raise PermissionDenied
+
+    if _user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        return render(request, 'customer/customer_view.html', {'customer': customer})
+
+    if not _user_in_group(request.user, ROLE_AGENTE):
+        raise PermissionDenied
+
+    requester_profile = get_object_or_404(Profile, user=request.user)
+    if not _agent_can_view_customer(requester_profile, customer):
+        raise PermissionDenied
     return render(request, 'customer/customer_view.html', {'customer': customer})
 
 # AGENTES
 @login_required
 def list_agents(request):
+    if not request.user.has_perm('Helpdesk.view_profile'):
+        raise PermissionDenied
+    if not _user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        # Sin regla de negocio que justifique que un Agente vea el
+        # directorio de colegas; se deniega por defecto.
+        raise PermissionDenied
+
     # Obtener todos los agentes
-    agents = Profile.objects.filter(user__is_staff=True)
+    agents = Profile.objects.filter(user__groups__name=ROLE_AGENTE)
     areas = Area.objects.all()
 
     # Aplicar los filtros acumulativamente
@@ -210,9 +283,27 @@ def list_agents(request):
 @login_required
 def agent_view(request, id):
     agent = get_object_or_404 (Profile, id=id)
-    return render(request, 'agents/agent_view.html', {'agent': agent})
+
+    # Esta vista solo sirve perfiles de tipo Agente. Mismo orden que
+    # customer_view: tipo de perfil antes que cualquier otra cosa.
+    if not _user_in_group(agent.user, ROLE_AGENTE):
+        raise Http404
+
+    if agent.user == request.user:
+        return render(request, 'agents/agent_view.html', {'agent': agent})
+
+    if not request.user.has_perm('Helpdesk.view_profile'):
+        raise PermissionDenied
+
+    if _user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        return render(request, 'agents/agent_view.html', {'agent': agent})
+
+    # Cualquier otro titular de view_profile (en la practica, un Agente) no
+    # puede ver el perfil de un colega: sin regla de negocio que lo justifique.
+    raise PermissionDenied
 
 @login_required
+@permission_required('Helpdesk.register_agent', raise_exception=True)
 def agent_signup(request):
     if request.method == 'GET':
         return render (request, 'agents/agent_signup.html', {'form': customer_creation_form})
@@ -238,6 +329,7 @@ def agent_signup(request):
                                                         'error': 'Constraseñas no coinciden.'})
 
 @login_required
+@permission_required('Helpdesk.register_agent', raise_exception=True)
 def agent_complete_profile(request, id):
     new_agent = get_object_or_404(User, pk=id)
     user_data = {
@@ -460,65 +552,87 @@ def get_ticket_data(tickets, request):
 
 #ATRIBUTOS TICKET
 @login_required
+@require_http_methods(["GET", "POST"])
 def manage_priorities(request):
     priorities = Priority.objects.all()
 
     if request.method == 'POST':
+        if not request.user.has_perm('Helpdesk.add_priority'):
+            raise PermissionDenied
         form = create_priority_form(request.POST)
         if form.is_valid():
             new_priority = form.save()
             return redirect('priorities')
     else:
+        if not request.user.has_perm('Helpdesk.view_priority'):
+            raise PermissionDenied
         form = create_priority_form()
 
     data = {'priorities': priorities, 'form': form}
     return render(request, 'tickets/priorities.html', data)
 
 @login_required
+@require_http_methods(["GET", "POST"])
 def manage_statuses(request):
     statuses = Status.objects.all()
 
     if request.method == 'POST':
+        if not request.user.has_perm('Helpdesk.add_status'):
+            raise PermissionDenied
         form = create_status_form(request.POST)
         if form.is_valid():
             new_status = form.save()
             return redirect('statuses')
     else:
+        if not request.user.has_perm('Helpdesk.view_status'):
+            raise PermissionDenied
         form = create_status_form()
 
     data = {'statuses': statuses, 'form': form}
     return render(request, 'tickets/statuses.html', data)
 
 @login_required
+@require_http_methods(["GET", "POST"])
 def manage_types(request):
     types = Type.objects.all()
 
     if request.method == 'POST':
+        if not request.user.has_perm('Helpdesk.add_type'):
+            raise PermissionDenied
         form = create_type_form(request.POST)
         if form.is_valid():
             new_type = form.save()
             return redirect('types')
     else:
+        if not request.user.has_perm('Helpdesk.view_type'):
+            raise PermissionDenied
         form = create_type_form()
 
     data = {'types': types, 'form': form}
     return render(request, 'tickets/types.html', data)
 
 @login_required
+@require_http_methods(["GET", "POST"])
 def manage_areas(request):
     areas = Area.objects.all()
 
     if request.method == 'POST':
+        if not request.user.has_perm('Helpdesk.add_area'):
+            raise PermissionDenied
         form = create_area_form(request.POST)
         if form.is_valid():
             new_area = form.save()
             return redirect('areas')
     else:
+        if not request.user.has_perm('Helpdesk.view_area'):
+            raise PermissionDenied
         form = create_area_form()
     data = {'areas': areas, 'form': form}
     return render(request, 'tickets/areas.html', data)
 
 @login_required
+@require_http_methods(["GET", "POST"])
+@permission_required('Helpdesk.change_priority', raise_exception=True)
 def edit_priority(request, id):
     priority = get_object_or_404(Priority, id=id)
     if request.method =='GET':
@@ -534,6 +648,8 @@ def edit_priority(request, id):
         return render(request, 'tickets/edit_priority.html', {'priority': priority, 'form': form, 'error':error})
 
 @login_required
+@require_http_methods(["GET", "POST"])
+@permission_required('Helpdesk.change_type', raise_exception=True)
 def edit_type(request, id):
     type = get_object_or_404(Type, id=id)
     if request.method =='GET':
@@ -549,6 +665,8 @@ def edit_type(request, id):
         return render(request, 'tickets/edit_type.html', {'type': type, 'form': form, 'error':error})
 
 @login_required
+@require_http_methods(["GET", "POST"])
+@permission_required('Helpdesk.change_status', raise_exception=True)
 def edit_status(request, id):
     status = get_object_or_404(Status, id=id)
     if request.method =='GET':
@@ -564,6 +682,8 @@ def edit_status(request, id):
         return render(request, 'tickets/edit_status.html', {'status': status, 'form': form, 'error':error})
 
 @login_required
+@require_http_methods(["GET", "POST"])
+@permission_required('Helpdesk.change_area', raise_exception=True)
 def edit_area(request, id):
     area = get_object_or_404(Area, id=id)
     if request.method =='GET':
@@ -578,30 +698,77 @@ def edit_area(request, id):
         error = 'No se puede editar esta prioridad'
         return render(request, 'tickets/edit_area.html', {'area': area, 'form': form, 'error':error})
 
+def _profile_has_dependent_tickets(profile):
+    """Un Profile puede estar ligado a Tickets como cliente, agente de apertura
+    o agente de cierre. Se usa para detectar perdida INDIRECTA de tickets cuando
+    un catalogo (ej. Area) cascadearia sobre Profile antes de llegar a Ticket."""
+    return (
+        profile.ticket_set.exists()
+        or profile.opened_tickets.exists()
+        or profile.closed_tickets.exists()
+    )
+
+def _area_has_dependent_tickets(area):
+    """Ademas de los Tickets asignados directamente a esta Area (asigned_area),
+    Profile.area usa on_delete=CASCADE: borrar el Area borraria en cascada
+    cualquier Profile que la tenga asignada, y ese Profile puede a su vez tener
+    Tickets propios (como cliente o agente). Se bloquea tambien ese caso."""
+    if area.asigned_area.exists():
+        return True
+    return any(_profile_has_dependent_tickets(profile) for profile in area.profile_set.all())
+
 @login_required
+@require_http_methods(["POST"])
+@permission_required('Helpdesk.delete_priority', raise_exception=True)
 def delete_priority(request, id):
     priority = get_object_or_404(Priority, id=id)
-    if request.method == 'POST':
-        priority.delete()
-        return redirect('priorities')
+    if priority.ticket_set.exists():
+        return render(request, 'tickets/priorities.html', {
+            'priorities': Priority.objects.all(),
+            'form': create_priority_form(),
+            'error': 'No se puede eliminar: existen tickets que usan esta prioridad.',
+        })
+    priority.delete()
+    return redirect('priorities')
 
 @login_required
+@require_http_methods(["POST"])
+@permission_required('Helpdesk.delete_type', raise_exception=True)
 def delete_type(request, id):
     type = get_object_or_404(Type, id=id)
-    if request.method == 'POST':
-        type.delete()
-        return redirect('types')
+    if type.ticket_set.exists():
+        return render(request, 'tickets/types.html', {
+            'types': Type.objects.all(),
+            'form': create_type_form(),
+            'error': 'No se puede eliminar: existen tickets que usan este tipo.',
+        })
+    type.delete()
+    return redirect('types')
 
 @login_required
+@require_http_methods(["POST"])
+@permission_required('Helpdesk.delete_status', raise_exception=True)
 def delete_status(request, id):
     status = get_object_or_404(Status, id=id)
-    if request.method == 'POST':
-        status.delete()
-        return redirect('statuses')
+    if status.ticket_set.exists():
+        return render(request, 'tickets/statuses.html', {
+            'statuses': Status.objects.all(),
+            'form': create_status_form(),
+            'error': 'No se puede eliminar: existen tickets que usan este estado.',
+        })
+    status.delete()
+    return redirect('statuses')
 
 @login_required
+@require_http_methods(["POST"])
+@permission_required('Helpdesk.delete_area', raise_exception=True)
 def delete_area(request, id):
     area = get_object_or_404(Area, id=id)
-    if request.method == 'POST':
-        area.delete()
-        return redirect('areas')
+    if _area_has_dependent_tickets(area):
+        return render(request, 'tickets/areas.html', {
+            'areas': Area.objects.all(),
+            'form': create_area_form(),
+            'error': 'No se puede eliminar: existen tickets o perfiles asociados a esta área.',
+        })
+    area.delete()
+    return redirect('areas')

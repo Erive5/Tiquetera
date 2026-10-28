@@ -37,6 +37,7 @@ GROUP_PERMISSIONS = {
     },
     "Agente": {
         Ticket: ["add_ticket", "view_ticket", "change_ticket"],
+        Profile: ["view_profile"],
     },
     "Jefe de Mesa": {
         Ticket: ["add_ticket", "view_ticket", "change_ticket"],
@@ -44,7 +45,7 @@ GROUP_PERMISSIONS = {
         Type: ["add_type", "change_type", "delete_type", "view_type"],
         Status: ["add_status", "change_status", "delete_status", "view_status"],
         Area: ["add_area", "change_area", "delete_area", "view_area"],
-        Profile: ["register_agent", "manage_user_status"],
+        Profile: ["register_agent", "manage_user_status", "view_profile"],
     },
 }
 

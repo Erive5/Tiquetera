@@ -26,14 +26,17 @@ REQUIRED_GROUPS = {"Cliente", "Agente", "Jefe de Mesa"}
 
 EXPECTED_GROUP_PERMISSIONS = {
     "Cliente": {"Helpdesk.add_ticket", "Helpdesk.view_ticket"},
-    "Agente": {"Helpdesk.add_ticket", "Helpdesk.view_ticket", "Helpdesk.change_ticket"},
+    "Agente": {
+        "Helpdesk.add_ticket", "Helpdesk.view_ticket", "Helpdesk.change_ticket",
+        "Helpdesk.view_profile",
+    },
     "Jefe de Mesa": {
         "Helpdesk.add_ticket", "Helpdesk.view_ticket", "Helpdesk.change_ticket",
         "Helpdesk.add_priority", "Helpdesk.change_priority", "Helpdesk.delete_priority", "Helpdesk.view_priority",
         "Helpdesk.add_type", "Helpdesk.change_type", "Helpdesk.delete_type", "Helpdesk.view_type",
         "Helpdesk.add_status", "Helpdesk.change_status", "Helpdesk.delete_status", "Helpdesk.view_status",
         "Helpdesk.add_area", "Helpdesk.change_area", "Helpdesk.delete_area", "Helpdesk.view_area",
-        "Helpdesk.register_agent", "Helpdesk.manage_user_status",
+        "Helpdesk.register_agent", "Helpdesk.manage_user_status", "Helpdesk.view_profile",
     },
 }
 
@@ -269,7 +272,10 @@ class SignupViewGroupAssignmentTests(TestCase):
         self.assertEqual(set(user.groups.values_list("name", flat=True)), {ROLE_CLIENTE})
 
     def test_agent_signup_assigns_agente_group(self):
-        caller = User.objects.create_user(username="cualquiera", password="x", is_staff=True)
+        # El Bloque 2 de 2.2A exige el permiso 'register_agent' para esta vista;
+        # se usa el Jefe de Mesa demo (superusuario) en lugar de un usuario
+        # arbitrario sin grupo/permiso, que ahora recibiria 403.
+        caller = User.objects.get(username="jefemesa@admin.cl")
         self.client.force_login(caller)
         self.client.post(reverse("agent_signup"), {
             "username": "nuevo_agente@test.cl", "password1": "x", "password2": "x",
@@ -443,3 +449,981 @@ class DeleteTicketDisabledTests(TestCase):
         resp = self.client.post(reverse("delete_ticket", args=[self.ticket.id]))
         self.assertEqual(resp.status_code, 403)
         self.assertTrue(Ticket.objects.filter(id=self.ticket.id).exists())
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2A (bloque 2): autorizacion de vistas administrativas
+# (catalogos, registro de agentes, activacion/desactivacion de usuarios).
+# ---------------------------------------------------------------------------
+
+class ManagePrioritiesAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("priorities"))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_authenticated_without_permission_get_403(self):
+        user = User.objects.create_user(username="cliente_mp@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("priorities"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_authenticated_without_permission_post_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_mp2@test.cl", password="x")
+        self.client.force_login(user)
+        before = Priority.objects.count()
+        resp = self.client.post(reverse("priorities"), {"priority_description": "Nueva"})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(Priority.objects.count(), before)
+
+    def test_jefe_de_mesa_non_superuser_can_view_and_create(self):
+        user = User.objects.create_user(username="jefe_mp@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        resp_get = self.client.get(reverse("priorities"))
+        self.assertEqual(resp_get.status_code, 200)
+
+        before = Priority.objects.count()
+        resp_post = self.client.post(reverse("priorities"), {"priority_description": "Nueva"})
+        self.assertEqual(resp_post.status_code, 302)
+        self.assertEqual(Priority.objects.count(), before + 1)
+
+    def test_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_mp2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("priorities"))
+        self.assertEqual(resp.status_code, 405)
+
+    def test_anonymous_with_disallowed_method_is_redirected_not_405(self):
+        # login_required es el decorador externo: un visitante anonimo siempre
+        # debe ser redirigido al login, incluso con un metodo no permitido.
+        resp = self.client.delete(reverse("priorities"))
+        self.assertEqual(resp.status_code, 302)
+
+
+class EditDeletePriorityAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+        self.priority = Priority.objects.create(priority_description="Para editar")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("edit_priority", args=[self.priority.id]))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_without_permission_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_ep@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_priority", args=[self.priority.id]),
+            {"priority_description": "Hackeada"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.priority.refresh_from_db()
+        self.assertEqual(self.priority.priority_description, "Para editar")
+
+    def test_jefe_de_mesa_non_superuser_can_edit(self):
+        user = User.objects.create_user(username="jefe_ep@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_priority", args=[self.priority.id]),
+            {"priority_description": "Editada"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.priority.refresh_from_db()
+        self.assertEqual(self.priority.priority_description, "Editada")
+
+    def test_edit_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_ep2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("edit_priority", args=[self.priority.id]))
+        self.assertEqual(resp.status_code, 405)
+
+    def test_delete_without_dependent_tickets_succeeds(self):
+        user = User.objects.create_user(username="jefe_dp1@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(reverse("delete_priority", args=[self.priority.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(Priority.objects.filter(id=self.priority.id).exists())
+
+    def test_delete_blocked_when_ticket_depends_on_it(self):
+        customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        Ticket.objects.create(
+            issue="Depende de esta prioridad", priority=self.priority,
+            type=Type.objects.first(), status=Status.objects.first(),
+            customer=customer_profile, observation="obs",
+        )
+        user = User.objects.create_user(username="jefe_dp2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        resp = self.client.post(reverse("delete_priority", args=[self.priority.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Priority.objects.filter(id=self.priority.id).exists())
+        # El mensaje de error debe quedar realmente visible en la plantilla.
+        self.assertContains(resp, "No se puede eliminar")
+
+    def test_delete_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_dp3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("delete_priority", args=[self.priority.id]))
+        self.assertEqual(resp.status_code, 405)
+
+
+class DeleteAreaIndirectDependencyTests(TestCase):
+    """El riesgo indirecto: Profile.area usa on_delete=CASCADE, asi que borrar
+    un Area borraria en cascada los Profile que la usan, y esos Profile pueden
+    tener Tickets propios (como cliente/agente) sin que el Ticket apunte
+    directamente al Area via asigned_area."""
+
+    def setUp(self):
+        call_command("seed_roles")
+        self.area = Area.objects.create(area_description="Area de prueba")
+
+    def test_delete_without_dependencies_succeeds(self):
+        user = User.objects.create_user(username="jefe_da1@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(reverse("delete_area", args=[self.area.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(Area.objects.filter(id=self.area.id).exists())
+
+    def test_delete_blocked_by_direct_ticket_assignment(self):
+        customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        Ticket.objects.create(
+            issue="Ticket con area asignada directamente",
+            priority=Priority.objects.first(), type=Type.objects.first(),
+            status=Status.objects.first(), customer=customer_profile,
+            observation="obs", asigned_area=self.area,
+        )
+        user = User.objects.create_user(username="jefe_da2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        resp = self.client.post(reverse("delete_area", args=[self.area.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Area.objects.filter(id=self.area.id).exists())
+        self.assertContains(resp, "No se puede eliminar")
+
+    def test_delete_blocked_by_indirect_profile_ticket_dependency(self):
+        # Ningun Ticket referencia el Area directamente; la dependencia es
+        # indirecta a traves de Profile.area (que es CASCADE) y ese Profile
+        # es el cliente de un Ticket.
+        agent_user = User.objects.create_user(username="agente_indirecto@test.cl", password="x")
+        agent_profile = Profile.objects.create(user=agent_user, rut="3-3", phone="333", area=self.area)
+        customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        Ticket.objects.create(
+            issue="Ticket cerrado por agente con esta area",
+            priority=Priority.objects.first(), type=Type.objects.first(),
+            status=Status.objects.first(), customer=customer_profile,
+            observation="obs", closure_agent=agent_profile,
+        )
+        user = User.objects.create_user(username="jefe_da3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        before_tickets = Ticket.objects.count()
+        resp = self.client.post(reverse("delete_area", args=[self.area.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Area.objects.filter(id=self.area.id).exists())
+        self.assertTrue(Profile.objects.filter(id=agent_profile.id).exists())
+        self.assertEqual(Ticket.objects.count(), before_tickets)
+        self.assertContains(resp, "No se puede eliminar")
+
+
+class AgentRegistrationAndUserStatusRealPermissionTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_agent_signup_requires_register_agent_permission(self):
+        plain_staff = User.objects.create_user(username="staff_sin_permiso@test.cl", password="x", is_staff=True)
+        self.client.force_login(plain_staff)
+        resp = self.client.get(reverse("agent_signup"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_jefe_de_mesa_non_superuser_can_register_agent(self):
+        jefe = User.objects.create_user(username="jefe_reg@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+        resp = self.client.post(reverse("agent_signup"), {
+            "username": "nuevo_agente2@test.cl", "password1": "x", "password2": "x",
+            "first_name": "A", "last_name": "B",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(User.objects.filter(username="nuevo_agente2@test.cl").exists())
+
+    def test_deactivate_user_requires_manage_user_status_no_mutation(self):
+        target = User.objects.create_user(username="target@test.cl", password="x", is_active=True)
+        Profile.objects.create(user=target, rut="9-9", phone="999")
+        attacker = User.objects.create_user(username="sin_permiso@test.cl", password="x")
+        self.client.force_login(attacker)
+
+        resp = self.client.post(reverse("deactivate_user", args=[target.profile_user.id]))
+        self.assertEqual(resp.status_code, 403)
+        target.refresh_from_db()
+        self.assertTrue(target.is_active)
+
+    def test_jefe_de_mesa_non_superuser_can_deactivate(self):
+        target = User.objects.create_user(username="target2@test.cl", password="x", is_active=True)
+        Profile.objects.create(user=target, rut="8-8", phone="888")
+        jefe = User.objects.create_user(username="jefe_du@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+
+        resp = self.client.post(reverse("deactivate_user", args=[target.profile_user.id]))
+        self.assertEqual(resp.status_code, 302)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+
+    def test_activate_disallowed_method_returns_405(self):
+        target = User.objects.create_user(username="target3@test.cl", password="x", is_active=False)
+        Profile.objects.create(user=target, rut="7-7", phone="777")
+        jefe = User.objects.create_user(username="jefe_du2@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+
+        resp = self.client.get(reverse("activate_user", args=[target.profile_user.id]))
+        self.assertEqual(resp.status_code, 405)
+
+
+# ---------------------------------------------------------------------------
+# Microincremento: cierre de cobertura faltante en 2.2A — bloque 2
+# (manage_types/statuses/areas, edit_type/status/area, delete_type/status,
+# activate_user, agent_complete_profile). Mismo patron ya probado para
+# priority/area, ahora ejercitado tambien sobre type/status/area/usuario.
+# No se usan cuentas demo (alambrito@cliente.cl, etc.) en estos tests nuevos:
+# cada test crea su propio fixture explicito.
+# ---------------------------------------------------------------------------
+
+class ManageTypesAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("types"))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_authenticated_without_permission_get_403(self):
+        user = User.objects.create_user(username="cliente_mt@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("types"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_authenticated_without_permission_post_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_mt2@test.cl", password="x")
+        self.client.force_login(user)
+        before = Type.objects.count()
+        resp = self.client.post(reverse("types"), {"type_description": "Nuevo"})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(Type.objects.count(), before)
+
+    def test_jefe_de_mesa_non_superuser_can_view_and_create(self):
+        user = User.objects.create_user(username="jefe_mt@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        self.assertEqual(self.client.get(reverse("types")).status_code, 200)
+
+        before = Type.objects.count()
+        resp = self.client.post(reverse("types"), {"type_description": "Nuevo"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Type.objects.count(), before + 1)
+
+    def test_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_mt2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("types"))
+        self.assertEqual(resp.status_code, 405)
+
+
+class ManageStatusesAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("statuses"))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_authenticated_without_permission_get_403(self):
+        user = User.objects.create_user(username="cliente_ms@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("statuses"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_authenticated_without_permission_post_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_ms2@test.cl", password="x")
+        self.client.force_login(user)
+        before = Status.objects.count()
+        resp = self.client.post(reverse("statuses"), {"status_description": "Nuevo"})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(Status.objects.count(), before)
+
+    def test_jefe_de_mesa_non_superuser_can_view_and_create(self):
+        user = User.objects.create_user(username="jefe_ms@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        self.assertEqual(self.client.get(reverse("statuses")).status_code, 200)
+
+        before = Status.objects.count()
+        resp = self.client.post(reverse("statuses"), {"status_description": "Nuevo"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Status.objects.count(), before + 1)
+
+    def test_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_ms2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("statuses"))
+        self.assertEqual(resp.status_code, 405)
+
+
+class ManageAreasAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("areas"))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_authenticated_without_permission_get_403(self):
+        user = User.objects.create_user(username="cliente_ma@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("areas"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_authenticated_without_permission_post_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_ma2@test.cl", password="x")
+        self.client.force_login(user)
+        before = Area.objects.count()
+        resp = self.client.post(reverse("areas"), {"area_description": "Nueva"})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(Area.objects.count(), before)
+
+    def test_jefe_de_mesa_non_superuser_can_view_and_create(self):
+        user = User.objects.create_user(username="jefe_ma@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        self.assertEqual(self.client.get(reverse("areas")).status_code, 200)
+
+        before = Area.objects.count()
+        resp = self.client.post(reverse("areas"), {"area_description": "Nueva"})
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Area.objects.count(), before + 1)
+
+    def test_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_ma2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("areas"))
+        self.assertEqual(resp.status_code, 405)
+
+
+class EditDeleteTypeAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+        self.type_obj = Type.objects.create(type_description="Para editar")
+        # Fixture propio: NO se usa la cuenta demo alambrito@cliente.cl.
+        self.customer_profile = Profile.objects.create(
+            user=User.objects.create_user(username="cliente_fixture_type@test.cl", password="x"),
+            rut="10-1", phone="101",
+        )
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("edit_type", args=[self.type_obj.id]))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_edit_without_permission_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_et@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_type", args=[self.type_obj.id]),
+            {"type_description": "Hackeado"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.type_obj.refresh_from_db()
+        self.assertEqual(self.type_obj.type_description, "Para editar")
+
+    def test_jefe_de_mesa_non_superuser_can_edit(self):
+        user = User.objects.create_user(username="jefe_et@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_type", args=[self.type_obj.id]),
+            {"type_description": "Editado"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.type_obj.refresh_from_db()
+        self.assertEqual(self.type_obj.type_description, "Editado")
+
+    def test_edit_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_et2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("edit_type", args=[self.type_obj.id]))
+        self.assertEqual(resp.status_code, 405)
+
+    def test_delete_without_permission_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_dt0@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("delete_type", args=[self.type_obj.id]))
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(Type.objects.filter(id=self.type_obj.id).exists())
+
+    def test_delete_without_dependent_tickets_succeeds(self):
+        user = User.objects.create_user(username="jefe_dt1@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(reverse("delete_type", args=[self.type_obj.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(Type.objects.filter(id=self.type_obj.id).exists())
+
+    def test_delete_blocked_when_ticket_depends_on_it(self):
+        Ticket.objects.create(
+            issue="Depende de este tipo", priority=Priority.objects.first(), type=self.type_obj,
+            status=Status.objects.first(), customer=self.customer_profile, observation="obs",
+        )
+        user = User.objects.create_user(username="jefe_dt2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        resp = self.client.post(reverse("delete_type", args=[self.type_obj.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Type.objects.filter(id=self.type_obj.id).exists())
+        self.assertContains(resp, "No se puede eliminar")
+
+    def test_delete_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_dt3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("delete_type", args=[self.type_obj.id]))
+        self.assertEqual(resp.status_code, 405)
+
+
+class EditDeleteStatusAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+        self.status_obj = Status.objects.create(status_description="Para editar")
+        self.customer_profile = Profile.objects.create(
+            user=User.objects.create_user(username="cliente_fixture_status@test.cl", password="x"),
+            rut="10-2", phone="102",
+        )
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("edit_status", args=[self.status_obj.id]))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_edit_without_permission_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_es@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_status", args=[self.status_obj.id]),
+            {"status_description": "Hackeado"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.status_obj.refresh_from_db()
+        self.assertEqual(self.status_obj.status_description, "Para editar")
+
+    def test_jefe_de_mesa_non_superuser_can_edit(self):
+        user = User.objects.create_user(username="jefe_es@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_status", args=[self.status_obj.id]),
+            {"status_description": "Editado"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.status_obj.refresh_from_db()
+        self.assertEqual(self.status_obj.status_description, "Editado")
+
+    def test_edit_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_es2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("edit_status", args=[self.status_obj.id]))
+        self.assertEqual(resp.status_code, 405)
+
+    def test_delete_without_permission_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_ds0@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("delete_status", args=[self.status_obj.id]))
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(Status.objects.filter(id=self.status_obj.id).exists())
+
+    def test_delete_without_dependent_tickets_succeeds(self):
+        user = User.objects.create_user(username="jefe_ds1@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(reverse("delete_status", args=[self.status_obj.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(Status.objects.filter(id=self.status_obj.id).exists())
+
+    def test_delete_blocked_when_ticket_depends_on_it(self):
+        Ticket.objects.create(
+            issue="Depende de este estado", priority=Priority.objects.first(), type=Type.objects.first(),
+            status=self.status_obj, customer=self.customer_profile, observation="obs",
+        )
+        user = User.objects.create_user(username="jefe_ds2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+
+        resp = self.client.post(reverse("delete_status", args=[self.status_obj.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Status.objects.filter(id=self.status_obj.id).exists())
+        self.assertContains(resp, "No se puede eliminar")
+
+    def test_delete_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_ds3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("delete_status", args=[self.status_obj.id]))
+        self.assertEqual(resp.status_code, 405)
+
+
+class EditAreaAuthorizationTests(TestCase):
+    # delete_area ya esta cubierto en detalle por DeleteAreaIndirectDependencyTests;
+    # aqui solo cerramos el vacio de edit_area (manage_areas y delete_area
+    # ya tenian cobertura).
+    def setUp(self):
+        call_command("seed_roles")
+        self.area = Area.objects.create(area_description="Para editar")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("edit_area", args=[self.area.id]))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_without_permission_403_no_mutation(self):
+        user = User.objects.create_user(username="cliente_ea@test.cl", password="x")
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_area", args=[self.area.id]),
+            {"area_description": "Hackeada"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.area.refresh_from_db()
+        self.assertEqual(self.area.area_description, "Para editar")
+
+    def test_jefe_de_mesa_non_superuser_can_edit(self):
+        user = User.objects.create_user(username="jefe_ea@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_area", args=[self.area.id]),
+            {"area_description": "Editada"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.area.refresh_from_db()
+        self.assertEqual(self.area.area_description, "Editada")
+
+    def test_edit_disallowed_method_returns_405(self):
+        user = User.objects.create_user(username="jefe_ea2@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.delete(reverse("edit_area", args=[self.area.id]))
+        self.assertEqual(resp.status_code, 405)
+
+
+class ActivateUserAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_anonymous_is_redirected_to_login(self):
+        target = User.objects.create_user(username="target_au1@test.cl", password="x", is_active=False)
+        Profile.objects.create(user=target, rut="1-0", phone="100")
+        resp = self.client.post(reverse("activate_user", args=[target.profile_user.id]))
+        self.assertEqual(resp.status_code, 302)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+
+    def test_without_permission_403_no_mutation(self):
+        target = User.objects.create_user(username="target_au2@test.cl", password="x", is_active=False)
+        Profile.objects.create(user=target, rut="2-0", phone="200")
+        attacker = User.objects.create_user(username="sin_permiso_au@test.cl", password="x")
+        self.client.force_login(attacker)
+
+        resp = self.client.post(reverse("activate_user", args=[target.profile_user.id]))
+        self.assertEqual(resp.status_code, 403)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+
+    def test_jefe_de_mesa_non_superuser_can_activate(self):
+        target = User.objects.create_user(username="target_au3@test.cl", password="x", is_active=False)
+        Profile.objects.create(user=target, rut="3-0", phone="300")
+        jefe = User.objects.create_user(username="jefe_au@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+
+        resp = self.client.post(reverse("activate_user", args=[target.profile_user.id]))
+        self.assertEqual(resp.status_code, 302)
+        target.refresh_from_db()
+        self.assertTrue(target.is_active)
+
+
+class AgentCompleteProfileAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+        # Replica el estado real post-agent_signup: usuario is_staff=True y ya
+        # asignado al grupo Agente (agent_signup llama set_user_role_group
+        # antes de redirigir aqui), todavia SIN Profile.
+        self.new_agent_user = User.objects.create_user(
+            username="nuevo_sin_perfil@test.cl", password="x", is_staff=True,
+        )
+        set_user_role_group(self.new_agent_user, ROLE_AGENTE)
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("agent_complete_profile", args=[self.new_agent_user.id]))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_without_permission_403_no_mutation(self):
+        attacker = User.objects.create_user(username="sin_permiso_acp@test.cl", password="x")
+        self.client.force_login(attacker)
+
+        # Campos reales requeridos por agent_profile_form: rut, phone (area es
+        # opcional, Profile.area es null=True/blank=True).
+        resp = self.client.post(
+            reverse("agent_complete_profile", args=[self.new_agent_user.id]),
+            {"rut": "7-0", "phone": "700"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(Profile.objects.filter(user=self.new_agent_user).exists())
+
+    def test_jefe_de_mesa_non_superuser_can_complete_profile(self):
+        jefe = User.objects.create_user(username="jefe_acp@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+
+        resp = self.client.post(
+            reverse("agent_complete_profile", args=[self.new_agent_user.id]),
+            {"rut": "8-0", "phone": "800"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        created_profile = Profile.objects.get(user=self.new_agent_user)
+        # El perfil creado debe quedar asociado exactamente al usuario cuyo id
+        # se paso en la URL, no al usuario que hizo la peticion (jefe).
+        self.assertEqual(created_profile.user_id, self.new_agent_user.id)
+        self.assertEqual(created_profile.rut, "8-0")
+        self.assertEqual(created_profile.phone, "800")
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2A — Bloque 3: autorizacion de perfiles y listados
+# (list_customers, customer_view, list_agents, agent_view).
+# Clasificacion por grupo RBAC (no is_staff). No se usan cuentas demo:
+# cada test crea sus propios fixtures.
+# ---------------------------------------------------------------------------
+
+class ListCustomersAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+        self.area = Area.objects.create(area_description="Soporte")
+
+    def _make_customer(self, username, rut):
+        user = User.objects.create_user(username=username, password="x")
+        profile = Profile.objects.create(user=user, rut=rut, phone="000")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return profile
+
+    def _make_agent(self, username, area=None):
+        user = User.objects.create_user(username=username, password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="9-9", phone="999", area=area)
+        set_user_role_group(user, ROLE_AGENTE)
+        return user, profile
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("customers"))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_cliente_cannot_list_customers(self):
+        cliente_user = self._make_customer("cliente_lc1@test.cl", "1-1").user
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("customers"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_agente_sin_area_y_sin_tickets_ve_lista_vacia(self):
+        agent_user, _ = self._make_agent("agente_lc1@test.cl", area=None)
+        self._make_customer("cliente_lc2@test.cl", "2-2")  # fuera de alcance
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customers"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "2-2")
+
+    def test_agente_ve_cliente_dentro_de_alcance_por_opening_agent(self):
+        agent_user, agent_profile = self._make_agent("agente_lc2@test.cl", area=None)
+        customer_profile = self._make_customer("cliente_lc3@test.cl", "3-3")
+        Ticket.objects.create(
+            issue="T1", priority=Priority.objects.create(priority_description="P"),
+            type=Type.objects.create(type_description="T"),
+            status=Status.objects.create(status_description="S"),
+            customer=customer_profile, observation="obs", opening_agent=agent_profile,
+        )
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customers"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "3-3")
+
+    def test_lista_de_agente_no_duplica_cliente_con_varios_tickets_en_alcance(self):
+        agent_user, agent_profile = self._make_agent("agente_lc3@test.cl", area=self.area)
+        customer_profile = self._make_customer("cliente_lc4@test.cl", "4-4")
+        priority = Priority.objects.create(priority_description="P2")
+        type_obj = Type.objects.create(type_description="T2")
+        status_obj = Status.objects.create(status_description="S2")
+        # Dos tickets del mismo cliente, cada uno coincide con el alcance por
+        # una razon distinta (area asignada y opening_agent).
+        Ticket.objects.create(
+            issue="T1", priority=priority, type=type_obj, status=status_obj,
+            customer=customer_profile, observation="obs", asigned_area=self.area,
+        )
+        Ticket.objects.create(
+            issue="T2", priority=priority, type=type_obj, status=status_obj,
+            customer=customer_profile, observation="obs", opening_agent=agent_profile,
+        )
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customers"))
+        self.assertEqual(resp.status_code, 200)
+        # El cliente debe aparecer en la tabla exactamente una vez.
+        self.assertEqual(resp.content.decode().count("4-4"), 1)
+
+    def test_jefe_de_mesa_non_superuser_ve_todos_los_clientes_sin_alcance(self):
+        jefe = User.objects.create_user(username="jefe_lc@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        customer_profile = self._make_customer("cliente_lc5@test.cl", "5-5")  # sin ningun ticket
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("customers"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "5-5")
+
+
+class CustomerViewAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+        self.area = Area.objects.create(area_description="Soporte CV")
+        self.priority = Priority.objects.create(priority_description="P-cv")
+        self.type_obj = Type.objects.create(type_description="T-cv")
+        self.status_obj = Status.objects.create(status_description="S-cv")
+
+        self.customer_user = User.objects.create_user(username="cliente_cv@test.cl", password="x")
+        self.customer_profile = Profile.objects.create(user=self.customer_user, rut="11-1", phone="111")
+        set_user_role_group(self.customer_user, ROLE_CLIENTE)
+
+    def _make_agent(self, username, area=None):
+        user = User.objects.create_user(username=username, password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="12-1", phone="121", area=area)
+        set_user_role_group(user, ROLE_AGENTE)
+        return user, profile
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_cliente_ve_su_propio_perfil(self):
+        self.client.force_login(self.customer_user)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_cliente_no_puede_ver_perfil_de_otro_cliente(self):
+        other_user = User.objects.create_user(username="cliente_cv2@test.cl", password="x")
+        set_user_role_group(other_user, ROLE_CLIENTE)
+        self.client.force_login(other_user)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_agente_sin_ticket_relacionado_no_puede_ver_cliente(self):
+        agent_user, _ = self._make_agent("agente_cv1@test.cl", area=None)
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_agente_con_area_asignada_ve_cliente_con_ticket_en_su_area(self):
+        agent_user, _ = self._make_agent("agente_cv2@test.cl", area=self.area)
+        Ticket.objects.create(
+            issue="T", priority=self.priority, type=self.type_obj, status=self.status_obj,
+            customer=self.customer_profile, observation="obs", asigned_area=self.area,
+        )
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_agente_sin_area_no_obtiene_acceso_por_coincidencia_de_area_nula(self):
+        # Ticket SIN area asignada (asigned_area=None) + agente SIN area
+        # (profile.area=None). Sin la guarda, Q(asigned_area=None) matchearia
+        # y le daria acceso indebido.
+        agent_user, _ = self._make_agent("agente_cv3@test.cl", area=None)
+        Ticket.objects.create(
+            issue="T", priority=self.priority, type=self.type_obj, status=self.status_obj,
+            customer=self.customer_profile, observation="obs",
+        )
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_agente_ve_cliente_por_opening_agent_sin_depender_de_area(self):
+        agent_user, agent_profile = self._make_agent("agente_cv4@test.cl", area=None)
+        Ticket.objects.create(
+            issue="T", priority=self.priority, type=self.type_obj, status=self.status_obj,
+            customer=self.customer_profile, observation="obs", opening_agent=agent_profile,
+        )
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_agente_ve_cliente_por_closure_agent_sin_depender_de_area(self):
+        agent_user, agent_profile = self._make_agent("agente_cv5@test.cl", area=None)
+        Ticket.objects.create(
+            issue="T", priority=self.priority, type=self.type_obj, status=self.status_obj,
+            customer=self.customer_profile, observation="obs", closure_agent=agent_profile,
+        )
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_jefe_de_mesa_non_superuser_ve_cualquier_cliente_sin_alcance(self):
+        jefe = User.objects.create_user(username="jefe_cv@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("customer_view", args=[self.customer_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_agente_no_puede_abrir_su_propio_perfil_via_customer_view(self):
+        agent_user, agent_profile = self._make_agent("agente_cv6@test.cl", area=None)
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("customer_view", args=[agent_profile.id]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_jefe_de_mesa_no_puede_usar_customer_view_sobre_perfil_de_agente(self):
+        jefe = User.objects.create_user(username="jefe_cv2@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        _, agent_profile = self._make_agent("agente_cv7@test.cl", area=None)
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("customer_view", args=[agent_profile.id]))
+        self.assertEqual(resp.status_code, 404)
+
+
+class AgentViewAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+        self.agent_user = User.objects.create_user(username="agente_av@test.cl", password="x", is_staff=True)
+        self.agent_profile = Profile.objects.create(user=self.agent_user, rut="21-1", phone="211")
+        set_user_role_group(self.agent_user, ROLE_AGENTE)
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("agent_view", args=[self.agent_profile.id]))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_agente_ve_su_propio_perfil(self):
+        self.client.force_login(self.agent_user)
+        resp = self.client.get(reverse("agent_view", args=[self.agent_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_agente_no_puede_ver_perfil_de_otro_agente(self):
+        other = User.objects.create_user(username="agente_av2@test.cl", password="x", is_staff=True)
+        set_user_role_group(other, ROLE_AGENTE)
+        self.client.force_login(other)
+        resp = self.client.get(reverse("agent_view", args=[self.agent_profile.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_cliente_no_puede_ver_perfil_de_agente(self):
+        cliente_user = User.objects.create_user(username="cliente_av@test.cl", password="x")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("agent_view", args=[self.agent_profile.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_jefe_de_mesa_non_superuser_ve_cualquier_agente(self):
+        jefe = User.objects.create_user(username="jefe_av@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("agent_view", args=[self.agent_profile.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_cliente_no_puede_abrir_su_propio_perfil_via_agent_view(self):
+        cliente_user = User.objects.create_user(username="cliente_av2@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="22-2", phone="222")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("agent_view", args=[cliente_profile.id]))
+        # El chequeo de tipo corre ANTES del acceso por propiedad: un perfil
+        # Cliente nunca es servido por agent_view, ni siquiera el propio.
+        self.assertEqual(resp.status_code, 404)
+
+    def test_jefe_de_mesa_no_puede_usar_agent_view_sobre_perfil_de_cliente(self):
+        jefe = User.objects.create_user(username="jefe_av2@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        cliente_user = User.objects.create_user(username="cliente_av3@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="23-3", phone="233")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("agent_view", args=[cliente_profile.id]))
+        self.assertEqual(resp.status_code, 404)
+
+
+class ListAgentsAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_anonymous_is_redirected_to_login(self):
+        resp = self.client.get(reverse("agents"))
+        self.assertEqual(resp.status_code, 302)
+
+    def test_cliente_cannot_list_agents(self):
+        cliente_user = User.objects.create_user(username="cliente_la@test.cl", password="x")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("agents"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_agente_cannot_list_agents(self):
+        agent_user = User.objects.create_user(username="agente_la@test.cl", password="x", is_staff=True)
+        set_user_role_group(agent_user, ROLE_AGENTE)
+        self.client.force_login(agent_user)
+        resp = self.client.get(reverse("agents"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_jefe_de_mesa_non_superuser_ve_todos_los_agentes(self):
+        jefe = User.objects.create_user(username="jefe_la@test.cl", password="x")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        other_agent_user = User.objects.create_user(username="agente_la2@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=other_agent_user, rut="31-1", phone="311")
+        set_user_role_group(other_agent_user, ROLE_AGENTE)
+
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("agents"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "31-1")
+
+
+class ProfileClassificationByGroupTests(TestCase):
+    """Cubre explicitamente que la clasificacion Cliente/Agente es por grupo
+    RBAC y no por is_staff."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_jefe_de_mesa_con_is_staff_false_no_se_clasifica_como_cliente(self):
+        jefe_user = User.objects.create_user(username="jefe_pc@test.cl", password="x", is_staff=False)
+        Profile.objects.create(user=jefe_user, rut="41-1", phone="411")
+        set_user_role_group(jefe_user, ROLE_JEFE_DE_MESA)
+
+        self.assertFalse(
+            Profile.objects.filter(user__groups__name=ROLE_CLIENTE, user=jefe_user).exists()
+        )
+        self.assertFalse(
+            Profile.objects.filter(user__groups__name=ROLE_AGENTE, user=jefe_user).exists()
+        )
+
+    def test_jefe_de_mesa_con_is_staff_true_no_se_clasifica_como_agente(self):
+        jefe_user = User.objects.create_user(username="jefe_pc2@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=jefe_user, rut="42-2", phone="422")
+        set_user_role_group(jefe_user, ROLE_JEFE_DE_MESA)
+
+        self.assertFalse(
+            Profile.objects.filter(user__groups__name=ROLE_AGENTE, user=jefe_user).exists()
+        )
