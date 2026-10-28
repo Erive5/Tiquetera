@@ -40,3 +40,40 @@ def set_user_role_group(user, group_name):
 
     target_group, _ = Group.objects.get_or_create(name=group_name)
     user.groups.add(target_group)
+
+
+def user_in_group(user, group_name):
+    return user.groups.filter(name=group_name).exists()
+
+
+class UnknownUserRoleError(Exception):
+    """Un usuario autenticado no pertenece a ninguno de los 3 grupos RBAC de
+    negocio (Cliente/Agente/Jefe de Mesa). No existe fallback a is_staff/
+    is_superuser para este caso: la pertenencia a grupo es la unica fuente
+    de verdad. Quien llama a user_type_label() decide como fallar (2.2B
+    exige que los flujos protegidos de tickets rechacen explicitamente)."""
+    pass
+
+
+USER_TYPE_BY_ROLE = {
+    ROLE_JEFE_DE_MESA: "Administrador",
+    ROLE_AGENTE: "Agente",
+    ROLE_CLIENTE: "Cliente",
+}
+
+
+def user_type_label(user):
+    """Clasifica a un usuario autenticado por pertenencia a grupo RBAC.
+    Devuelve los mismos valores que el get_user_type() anterior
+    ('Administrador'/'Agente'/'Cliente') para no romper list_tickets() ni
+    ticket_view.html, que comparan contra estos strings exactos (alcance de
+    tickets = 2.2C, no tocado aqui). Si el usuario no pertenece a ningun
+    grupo RBAC, levanta UnknownUserRoleError en vez de usar
+    group_name_for_user() como fallback: no se asume ningun rol por
+    defecto para un usuario sin clasificar."""
+    for role in (ROLE_JEFE_DE_MESA, ROLE_AGENTE, ROLE_CLIENTE):
+        if user_in_group(user, role):
+            return USER_TYPE_BY_ROLE[role]
+    raise UnknownUserRoleError(
+        f"El usuario '{user}' no pertenece a ningun grupo RBAC de negocio."
+    )

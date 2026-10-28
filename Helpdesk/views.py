@@ -11,7 +11,10 @@ from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseNotAllowed, Http404
 
 from django.views.decorators.http import require_http_methods
-from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, ROLE_JEFE_DE_MESA, set_user_role_group
+from Helpdesk.rbac import (
+    ROLE_AGENTE, ROLE_CLIENTE, ROLE_JEFE_DE_MESA, UnknownUserRoleError,
+    set_user_role_group, user_in_group, user_type_label,
+)
 
 # USUARIOS
 def home(request):
@@ -35,14 +38,17 @@ def signin(request):
 
 @login_required
 def get_user_type(request):
-    current_user = request.user
-    user_type = (
-        "Administrador" if current_user.is_superuser and current_user.is_staff else
-        "Agente" if current_user.is_staff and not current_user.is_superuser else
-        "Cliente" if current_user.is_authenticated and not current_user.is_staff else
-        "Invitado"
-    )
-    return user_type
+    # Migrado a clasificacion por grupo RBAC (Helpdesk.rbac.user_type_label).
+    # Devuelve los mismos valores que antes; list_tickets() y
+    # ticket_view.html siguen comparando contra estos strings sin cambios
+    # (alcance de tickets = 2.2C, no tocado aqui). Un usuario autenticado
+    # SIN grupo RBAC ya no se reclasifica por is_staff/is_superuser: se
+    # rechaza explicitamente, porque esta funcion alimenta flujos de
+    # tickets (list_tickets, ticket_view) y no hay rol por defecto seguro.
+    try:
+        return user_type_label(request.user)
+    except UnknownUserRoleError:
+        raise PermissionDenied
 
 @login_required
 def my_profile_view(request):
@@ -189,9 +195,6 @@ def customer_complete_profile(request, customer_id=None):
 # (p.ej. un Jefe de Mesa con is_staff=False no debe contarse como cliente).
 # set_user_role_group() garantiza que un usuario pertenece a lo sumo a uno
 # de los 3 grupos RBAC, asi que esta clasificacion es confiable y unica.
-def _user_in_group(user, group_name):
-    return user.groups.filter(name=group_name).exists()
-
 def _agent_ticket_scope_q(agent_profile):
     """Mismo criterio de alcance que list_tickets para un Agente. Profile.area
     es nullable (igual que Ticket.asigned_area): si el agente no tiene area
@@ -215,8 +218,8 @@ def list_customers(request):
 
     customers = Profile.objects.filter(user__groups__name=ROLE_CLIENTE)
 
-    if not _user_in_group(request.user, ROLE_JEFE_DE_MESA):
-        if not _user_in_group(request.user, ROLE_AGENTE):
+    if not user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        if not user_in_group(request.user, ROLE_AGENTE):
             # view_profile sin ser Agente ni Jefe de Mesa: ningun rol
             # contemplado lo autoriza a listar clientes.
             raise PermissionDenied
@@ -239,7 +242,7 @@ def customer_view(request, id):
     # Esta vista solo sirve perfiles de tipo Cliente. Se valida ANTES de
     # cualquier bypass de rol (incluido Jefe de Mesa) y antes del acceso por
     # propiedad: un Agente no puede abrir su propio perfil via esta vista.
-    if not _user_in_group(customer.user, ROLE_CLIENTE):
+    if not user_in_group(customer.user, ROLE_CLIENTE):
         raise Http404
 
     if customer.user == request.user:
@@ -248,10 +251,10 @@ def customer_view(request, id):
     if not request.user.has_perm('Helpdesk.view_profile'):
         raise PermissionDenied
 
-    if _user_in_group(request.user, ROLE_JEFE_DE_MESA):
+    if user_in_group(request.user, ROLE_JEFE_DE_MESA):
         return render(request, 'customer/customer_view.html', {'customer': customer})
 
-    if not _user_in_group(request.user, ROLE_AGENTE):
+    if not user_in_group(request.user, ROLE_AGENTE):
         raise PermissionDenied
 
     requester_profile = get_object_or_404(Profile, user=request.user)
@@ -264,7 +267,7 @@ def customer_view(request, id):
 def list_agents(request):
     if not request.user.has_perm('Helpdesk.view_profile'):
         raise PermissionDenied
-    if not _user_in_group(request.user, ROLE_JEFE_DE_MESA):
+    if not user_in_group(request.user, ROLE_JEFE_DE_MESA):
         # Sin regla de negocio que justifique que un Agente vea el
         # directorio de colegas; se deniega por defecto.
         raise PermissionDenied
@@ -286,7 +289,7 @@ def agent_view(request, id):
 
     # Esta vista solo sirve perfiles de tipo Agente. Mismo orden que
     # customer_view: tipo de perfil antes que cualquier otra cosa.
-    if not _user_in_group(agent.user, ROLE_AGENTE):
+    if not user_in_group(agent.user, ROLE_AGENTE):
         raise Http404
 
     if agent.user == request.user:
@@ -295,7 +298,7 @@ def agent_view(request, id):
     if not request.user.has_perm('Helpdesk.view_profile'):
         raise PermissionDenied
 
-    if _user_in_group(request.user, ROLE_JEFE_DE_MESA):
+    if user_in_group(request.user, ROLE_JEFE_DE_MESA):
         return render(request, 'agents/agent_view.html', {'agent': agent})
 
     # Cualquier otro titular de view_profile (en la practica, un Agente) no

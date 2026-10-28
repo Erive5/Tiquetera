@@ -13,8 +13,10 @@ from Helpdesk.rbac import (
     ROLE_AGENTE,
     ROLE_CLIENTE,
     ROLE_JEFE_DE_MESA,
+    UnknownUserRoleError,
     group_name_for_user,
     set_user_role_group,
+    user_type_label,
 )
 
 
@@ -1427,3 +1429,215 @@ class ProfileClassificationByGroupTests(TestCase):
         self.assertFalse(
             Profile.objects.filter(user__groups__name=ROLE_AGENTE, user=jefe_user).exists()
         )
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2B: migracion de get_user_type() y navegacion a RBAC.
+# Sin fallback a flags is_staff/is_superuser para usuarios sin grupo RBAC.
+# ---------------------------------------------------------------------------
+
+class GetUserTypeMigrationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_cliente_returns_cliente(self):
+        user = User.objects.create_user(username="cliente_gut@test.cl", password="x")
+        set_user_role_group(user, ROLE_CLIENTE)
+        self.assertEqual(user_type_label(user), "Cliente")
+
+    def test_agente_returns_agente(self):
+        user = User.objects.create_user(username="agente_gut@test.cl", password="x", is_staff=True)
+        set_user_role_group(user, ROLE_AGENTE)
+        self.assertEqual(user_type_label(user), "Agente")
+
+    def test_jefe_de_mesa_non_superuser_returns_administrador(self):
+        user = User.objects.create_user(username="jefe_gut@test.cl", password="x", is_superuser=False)
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.assertEqual(user_type_label(user), "Administrador")
+
+    def test_jefe_de_mesa_demo_superuser_returns_administrador(self):
+        demo = User.objects.get(username="jefemesa@admin.cl")
+        self.assertEqual(user_type_label(demo), "Administrador")
+
+    def test_user_without_rbac_group_and_is_staff_true_raises_no_fallback(self):
+        # Caso explicitamente pedido: is_staff=True NO debe reclasificar como
+        # Agente. Sin grupo RBAC, se rechaza, no se asume ningun rol.
+        user = User.objects.create_user(username="sin_grupo_staff@test.cl", password="x", is_staff=True)
+        with self.assertRaises(UnknownUserRoleError):
+            user_type_label(user)
+
+    def test_user_without_rbac_group_plain_raises(self):
+        user = User.objects.create_user(username="sin_grupo_plano@test.cl", password="x")
+        with self.assertRaises(UnknownUserRoleError):
+            user_type_label(user)
+
+
+class GetUserTypeViewRejectsUnclassifiedUsersTests(TestCase):
+    """Los flujos de tickets que consumen get_user_type() (list_tickets,
+    ticket_view) deben fallar de forma controlada (403) para un usuario sin
+    grupo RBAC, en vez de tratarlo como Cliente/Agente via is_staff."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_list_tickets_rejects_user_without_rbac_group(self):
+        user = User.objects.create_user(username="sin_grupo_lt@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=user, rut="50-0", phone="500")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_ticket_view_rejects_user_without_rbac_group(self):
+        user = User.objects.create_user(username="sin_grupo_tv@test.cl", password="x")
+        customer_profile = Profile.objects.create(
+            user=User.objects.create_user(username="cliente_tv@test.cl", password="x"),
+            rut="51-1", phone="511",
+        )
+        ticket = Ticket.objects.create(
+            issue="T", priority=Priority.objects.create(priority_description="P-tv"),
+            type=Type.objects.create(type_description="T-tv"),
+            status=Status.objects.create(status_description="S-tv"),
+            customer=customer_profile, observation="obs",
+        )
+        self.client.force_login(user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_classified_jefe_de_mesa_non_superuser_still_works(self):
+        # Control: un usuario SI clasificado sigue funcionando (list_tickets
+        # no se rompio para los roles reales). list_tickets requiere un
+        # Profile existente para el usuario autenticado.
+        jefe = User.objects.create_user(username="jefe_lt_ctrl@test.cl", password="x", is_superuser=False)
+        Profile.objects.create(user=jefe, rut="52-2", phone="522")
+        set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+
+
+class NavigationVisibilityTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_anonymous_sees_no_protected_links(self):
+        resp = self.client.get(reverse("home"))
+        self.assertNotContains(resp, "Atributos Tickets")
+        self.assertNotContains(resp, reverse("agents"))
+        self.assertNotContains(resp, reverse("customers"))
+
+    def test_cliente_sees_no_admin_links(self):
+        user = User.objects.create_user(username="cliente_nav@test.cl", password="x")
+        set_user_role_group(user, ROLE_CLIENTE)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("home"))
+        self.assertNotContains(resp, "Atributos Tickets")
+        self.assertNotContains(resp, reverse("agents"))
+        self.assertNotContains(resp, reverse("customers"))
+
+    def test_agente_sees_only_clientes_link(self):
+        user = User.objects.create_user(username="agente_nav@test.cl", password="x", is_staff=True)
+        set_user_role_group(user, ROLE_AGENTE)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("home"))
+        self.assertNotContains(resp, "Atributos Tickets")
+        self.assertNotContains(resp, reverse("agents"))
+        self.assertContains(resp, reverse("customers"))
+
+    def test_jefe_de_mesa_non_superuser_sees_all_admin_links(self):
+        user = User.objects.create_user(username="jefe_nav@test.cl", password="x", is_superuser=False)
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("home"))
+        self.assertContains(resp, "Atributos Tickets")
+        self.assertContains(resp, "Gestión prioridades")
+        self.assertContains(resp, "Gestión tipos")
+        self.assertContains(resp, "Gestión estados")
+        self.assertContains(resp, "Gestión áreas")
+        self.assertContains(resp, reverse("agents"))
+        self.assertContains(resp, reverse("customers"))
+
+    def test_jefe_de_mesa_demo_superuser_sees_same_links(self):
+        demo = User.objects.get(username="jefemesa@admin.cl")
+        self.client.force_login(demo)
+        resp = self.client.get(reverse("home"))
+        self.assertContains(resp, "Atributos Tickets")
+        self.assertContains(resp, reverse("agents"))
+        self.assertContains(resp, reverse("customers"))
+
+    def test_authenticated_user_without_rbac_group_does_not_crash_nav(self):
+        user = User.objects.create_user(username="sin_grupo_nav@test.cl", password="x", is_staff=True)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("home"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "Atributos Tickets")
+        self.assertNotContains(resp, reverse("agents"))
+        self.assertNotContains(resp, reverse("customers"))
+
+
+class ProfileViewLabelAndLinksTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def test_cliente_label_and_last_activity(self):
+        user = User.objects.create_user(username="cliente_pv@test.cl", password="x")
+        Profile.objects.create(user=user, rut="60-0", phone="600")
+        set_user_role_group(user, ROLE_CLIENTE)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("my_profile"))
+        self.assertContains(resp, "Cliente")
+        self.assertContains(resp, "Última actividad")
+
+    def test_agente_label_and_area(self):
+        user = User.objects.create_user(username="agente_pv@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=user, rut="61-1", phone="611")
+        set_user_role_group(user, ROLE_AGENTE)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("my_profile"))
+        self.assertContains(resp, "Agente")
+        self.assertContains(resp, "Área:")
+
+    def test_jefe_de_mesa_non_superuser_label(self):
+        user = User.objects.create_user(username="jefe_pv@test.cl", password="x", is_superuser=False)
+        Profile.objects.create(user=user, rut="62-2", phone="622")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("my_profile"))
+        self.assertContains(resp, "Jefe de Mesa")
+
+    def test_profile_links_use_profile_id_not_user_id_when_they_diverge(self):
+        # Fuerzo que Profile.id != User.id creando varios Usuarios "huerfanos"
+        # (sin Profile asociado) antes del usuario bajo prueba: eso avanza la
+        # secuencia de User.id sin avanzar la de Profile.id. Crear pares
+        # User+Profile 1 a 1 (como se intento originalmente) nunca desincroniza
+        # las secuencias porque ambas avanzan en paralelo.
+        for i in range(5):
+            User.objects.create_user(username=f"huerfano_{i}@test.cl", password="x")
+
+        user = User.objects.create_user(username="cliente_idcheck@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut="80-0", phone="800")
+        set_user_role_group(user, ROLE_CLIENTE)
+        self.assertNotEqual(user.id, profile.id)  # confirma que la divergencia es real
+
+        self.client.force_login(user)
+        resp = self.client.get(reverse("my_profile"))
+        content = resp.content.decode()
+
+        self.assertIn(reverse("modify_password", args=[profile.id]), content)
+        self.assertIn(reverse("modify_user_data", args=[profile.id]), content)
+        self.assertNotIn(reverse("modify_password", args=[user.id]), content)
+        self.assertNotIn(reverse("modify_user_data", args=[user.id]), content)
+
+    def test_modify_user_data_link_actually_works_for_owner_when_ids_diverge(self):
+        # Misma tecnica: usuarios huerfanos sin Profile para desincronizar
+        # las secuencias de id.
+        for i in range(5):
+            User.objects.create_user(username=f"huerfano2_{i}@test.cl", password="x")
+
+        user = User.objects.create_user(username="cliente_idcheck2@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut="81-0", phone="801")
+        set_user_role_group(user, ROLE_CLIENTE)
+        self.assertNotEqual(user.id, profile.id)
+
+        self.client.force_login(user)
+        resp = self.client.get(reverse("modify_user_data", args=[profile.id]))
+        self.assertEqual(resp.status_code, 200)
