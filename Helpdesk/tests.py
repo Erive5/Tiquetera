@@ -251,23 +251,13 @@ class BootstrapRbacTests(TestCase):
         )
 
 
-class DemoUserGroupAssignmentTests(TestCase):
-    def test_demo_users_already_have_their_rbac_group(self):
-        # Asignado via post_migrate (ya corrido al armar la BD de test),
-        # sin necesidad de correr ningun comando de este incremento.
-        self.assertEqual(User.objects.get(username="jefemesa@admin.cl").groups.get().name, ROLE_JEFE_DE_MESA)
-        self.assertEqual(User.objects.get(username="agente@ventas.cl").groups.get().name, ROLE_AGENTE)
-        self.assertEqual(User.objects.get(username="alambrito@cliente.cl").groups.get().name, ROLE_CLIENTE)
-
-    def test_demo_jefe_de_mesa_sin_superuser_ni_staff(self):
-        # 2.2D: nuevas instalaciones crean la cuenta demo del Jefe de Mesa
-        # SIN is_superuser ni is_staff (antes, hasta 2.2C, se creaba con
-        # ambos en True; este test reemplaza a
-        # test_demo_superuser_flag_unchanged, que verificaba lo contrario
-        # a proposito porque ese incremento aun no se habia hecho).
-        demo = User.objects.get(username="jefemesa@admin.cl")
-        self.assertFalse(demo.is_superuser)
-        self.assertFalse(demo.is_staff)
+# 3.2.1: DemoUserGroupAssignmentTests se elimino. Verificaba la asignacion
+# de grupo RBAC hecha por los receptores post_migiate que creaban las 3
+# cuentas demo con contrasena fija (jefemesa@admin.cl, agente@ventas.cl,
+# alambrito@cliente.cl) - ese mecanismo se retiro de models.py (hallazgo de
+# seguridad S2, Fase 3.1). La asignacion de grupo por set_user_role_group()
+# en si misma sigue cubierta por SetUserRoleGroupTests, mas arriba en este
+# archivo.
 
 
 class SignupViewGroupAssignmentTests(TestCase):
@@ -289,11 +279,12 @@ class SignupViewGroupAssignmentTests(TestCase):
         self.assertEqual(set(user.groups.values_list("name", flat=True)), {ROLE_CLIENTE})
 
     def test_agent_signup_assigns_agente_group(self):
-        # El Bloque 2 de 2.2A exige el permiso 'register_agent' para esta vista;
-        # se usa el Jefe de Mesa demo (tiene ese permiso via su grupo RBAC,
-        # no por ser superusuario -- desde 2.2D ya no lo es) en lugar de un
-        # usuario arbitrario sin grupo/permiso, que ahora recibiria 403.
-        caller = User.objects.get(username="jefemesa@admin.cl")
+        # El Bloque 2 de 2.2A exige el permiso 'register_agent' para esta
+        # vista; se usa un Jefe de Mesa de fixture propio (tiene ese
+        # permiso via su grupo RBAC) en lugar de un usuario arbitrario sin
+        # grupo/permiso, que recibiria 403.
+        caller = User.objects.create_user(username="jefe_signup@test.cl", password="x")
+        set_user_role_group(caller, ROLE_JEFE_DE_MESA)
         self.client.force_login(caller)
         self.client.post(reverse("agent_signup"), {
             "username": "nuevo_agente@test.cl", "password1": "x", "password2": "x",
@@ -435,7 +426,10 @@ class ModifyPasswordAuthorizationTests(TestCase):
 
 class DeleteTicketDisabledTests(TestCase):
     def setUp(self):
-        self.customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        self.customer_profile = Profile.objects.create(
+            user=User.objects.create_user(username="cliente_dt@test.cl", password="x"),
+            rut="20-1", phone="201",
+        )
         self.ticket = Ticket.objects.create(
             issue="Test", priority=Priority.objects.first(), type=Type.objects.first(),
             status=Status.objects.first(), customer=self.customer_profile, observation="obs",
@@ -589,7 +583,10 @@ class EditDeletePriorityAuthorizationTests(TestCase):
         self.assertFalse(Priority.objects.filter(id=self.priority.id).exists())
 
     def test_delete_blocked_when_ticket_depends_on_it(self):
-        customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        customer_profile = Profile.objects.create(
+            user=User.objects.create_user(username="cliente_dp@test.cl", password="x"),
+            rut="21-1", phone="211",
+        )
         Ticket.objects.create(
             issue="Depende de esta prioridad", priority=self.priority,
             type=Type.objects.first(), status=Status.objects.first(),
@@ -632,7 +629,10 @@ class DeleteAreaIndirectDependencyTests(TestCase):
         self.assertFalse(Area.objects.filter(id=self.area.id).exists())
 
     def test_delete_blocked_by_direct_ticket_assignment(self):
-        customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        customer_profile = Profile.objects.create(
+            user=User.objects.create_user(username="cliente_da1@test.cl", password="x"),
+            rut="22-1", phone="221",
+        )
         Ticket.objects.create(
             issue="Ticket con area asignada directamente",
             priority=Priority.objects.first(), type=Type.objects.first(),
@@ -654,7 +654,10 @@ class DeleteAreaIndirectDependencyTests(TestCase):
         # es el cliente de un Ticket.
         agent_user = User.objects.create_user(username="agente_indirecto@test.cl", password="x")
         agent_profile = Profile.objects.create(user=agent_user, rut="3-3", phone="333", area=self.area)
-        customer_profile = Profile.objects.get(user__username="alambrito@cliente.cl")
+        customer_profile = Profile.objects.create(
+            user=User.objects.create_user(username="cliente_da2@test.cl", password="x"),
+            rut="22-2", phone="222",
+        )
         Ticket.objects.create(
             issue="Ticket cerrado por agente con esta area",
             priority=Priority.objects.first(), type=Type.objects.first(),
@@ -1534,13 +1537,11 @@ class GetUserTypeMigrationTests(TestCase):
         set_user_role_group(user, ROLE_JEFE_DE_MESA)
         self.assertEqual(user_type_label(user), "Administrador")
 
-    def test_jefe_de_mesa_demo_non_superuser_returns_administrador(self):
-        # 2.2D: la cuenta demo ya no es superusuario; esta prueba confirma
-        # que su clasificacion sigue siendo correcta (por grupo RBAC, no
-        # por el flag, que de todas formas ya no tiene).
-        demo = User.objects.get(username="jefemesa@admin.cl")
-        self.assertFalse(demo.is_superuser)
-        self.assertEqual(user_type_label(demo), "Administrador")
+    # 3.2.1: test_jefe_de_mesa_demo_non_superuser_returns_administrador se
+    # elimino (dependia de la cuenta demo jefemesa@admin.cl, retirada de
+    # post_migrate). Duplicaba, con esa cuenta, lo que ya prueba
+    # test_jefe_de_mesa_non_superuser_returns_administrador con un
+    # fixture propio, justo arriba.
 
     def test_user_without_rbac_group_and_is_staff_true_raises_no_fallback(self):
         # Caso explicitamente pedido: is_staff=True NO debe reclasificar como
@@ -1639,17 +1640,10 @@ class NavigationVisibilityTests(TestCase):
         self.assertContains(resp, reverse("agents"))
         self.assertContains(resp, reverse("customers"))
 
-    def test_jefe_de_mesa_demo_non_superuser_sees_same_links(self):
-        # 2.2D: la cuenta demo ya no es superusuario; el nav ya dependia de
-        # perms/user_type desde 2.2B, no de is_superuser, asi que no deberia
-        # cambiar nada.
-        demo = User.objects.get(username="jefemesa@admin.cl")
-        self.assertFalse(demo.is_superuser)
-        self.client.force_login(demo)
-        resp = self.client.get(reverse("home"))
-        self.assertContains(resp, "Atributos Tickets")
-        self.assertContains(resp, reverse("agents"))
-        self.assertContains(resp, reverse("customers"))
+    # 3.2.1: test_jefe_de_mesa_demo_non_superuser_sees_same_links se
+    # elimino (dependia de la cuenta demo jefemesa@admin.cl, retirada de
+    # post_migrate). Duplicaba, con esa cuenta, el test de navegacion ya
+    # cubierto arriba con un fixture propio.
 
     def test_authenticated_user_without_rbac_group_does_not_crash_nav(self):
         user = User.objects.create_user(username="sin_grupo_nav@test.cl", password="x", is_staff=True)
@@ -2019,19 +2013,11 @@ class TicketViewAuthorizationTests(TestCase):
         resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
         self.assertEqual(resp.status_code, 200)
 
-    def test_jefe_de_mesa_demo_non_superuser_ve_cualquier_ticket(self):
-        # 2.2D: la cuenta demo ya no es superusuario; el acceso total a
-        # cualquier ticket viene de su pertenencia al grupo Jefe de Mesa
-        # (2.2C.2), no de is_superuser.
-        demo = User.objects.get(username="jefemesa@admin.cl")
-        self.assertFalse(demo.is_superuser)
-        cliente_user = User.objects.create_user(username="cliente_tv_demo@test.cl", password="x")
-        cliente_profile = Profile.objects.create(user=cliente_user, rut="219-9", phone="2199")
-        ticket = self._make_ticket(cliente_profile)
-
-        self.client.force_login(demo)
-        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
-        self.assertEqual(resp.status_code, 200)
+    # 3.2.1: test_jefe_de_mesa_demo_non_superuser_ve_cualquier_ticket se
+    # elimino (dependia de la cuenta demo jefemesa@admin.cl, retirada de
+    # post_migrate). Duplicaba, con esa cuenta,
+    # test_jefe_de_mesa_non_superuser_ve_cualquier_ticket, justo arriba,
+    # que ya cubre lo mismo con un fixture propio.
 
 
 # ---------------------------------------------------------------------------

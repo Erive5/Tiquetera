@@ -9,14 +9,13 @@ Proyecto propuesto en institución académica que desarrolla en respuesta a la n
 
 A continuación, se detallan los requerimientos funcionales del software, organizados por roles de usuario, con el objetivo de ofrecer una solución que satisfaga las necesidades de la consultora en su labor diaria de atención a sus clientes.
 
-Además, se han creado 3 usuarios por defecto para probar el sistema desde los distintos roles:
-
-- Usuario Cliente = alambrito@cliente.cl
-- Usuario Agente = agente@ventas.cl
-- Usuario Administrador = jefemesa@admin.cl
-
-> [!TIP]
-> La contraseña para los 3 usuarios es la misma = password123
+Cualquier visitante puede registrarse como Cliente desde `/customer_signup/`.
+Las cuentas de Agente y Jefe de Mesa se crean por mecanismos administrativos
+controlados (no hay auto-registro para esos roles ni usuarios demo con
+contraseña conocida): `agent_signup` (requiere permiso de Jefe de Mesa) y
+el comando `python manage.py create_jefe_de_mesa` para el primer Jefe de
+Mesa. Ver `claude/estado-actual.md` / `claude/rbac-progreso.md` en el
+proyecto para el detalle de una instalación desde cero.
 
 
 ## Aspectos técnicos:

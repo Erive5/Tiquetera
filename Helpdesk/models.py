@@ -1,9 +1,8 @@
-from django.db import models, transaction
+from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.signals import post_migrate
 from django.dispatch import receiver
 
-from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, ROLE_JEFE_DE_MESA, set_user_role_group
 
 # Create your models here.
 class Priority(models.Model):
@@ -106,84 +105,24 @@ def create_default_estado(sender, **kwargs):
     Status.objects.get_or_create(status_description='Resuelto')
     Status.objects.get_or_create(status_description='No aplica')
 
-@receiver(post_migrate)
-def create_default_admin(sender, **kwargs):
-    if not User.objects.filter(username='jefemesa@admin.cl').exists():
-        with transaction.atomic():
-            # Crear el usuario
-            # 2.2D: nuevas instalaciones crean la cuenta demo del Jefe de
-            # Mesa SIN is_superuser ni is_staff. Sus 22 permisos RBAC (grupo
-            # 'Jefe de Mesa', asignado abajo via set_user_role_group) ya
-            # cubren toda su funcionalidad autorizada; is_superuser le daba
-            # acceso incondicional via el bypass de ModelBackend.has_perm(),
-            # contrario a "RBAC real". Una instalacion donde esta cuenta ya
-            # existia con los flags antiguos debe correr el comando
-            # 'demote_demo_jefe_de_mesa' una vez (este receptor post_migrate
-            # solo CREA la cuenta si no existe; no la actualiza despues).
-            user = User.objects.create_user(
-                username='jefemesa@admin.cl',
-                password='password123',
-                first_name = 'Armando',
-                last_name = 'Casas',
-                is_staff=False,
-                is_superuser=False,
-                is_active=True
-            )
-
-            administracion = Area.objects.get(area_description='Administración')
-            # Crear el perfil asociado al usuario
-            Profile.objects.create(
-                user=user,
-                rut='12345678-9',
-                phone='123456789',
-                area=administracion
-            )
-            set_user_role_group(user, ROLE_JEFE_DE_MESA)
-
-@receiver(post_migrate)
-def create_default_agent(sender, **kwargs):
-    if not User.objects.filter(username='agente@ventas.cl').exists():
-        with transaction.atomic():
-            # Crear el usuario
-            user = User.objects.create_user(
-                username='agente@ventas.cl',
-                password='password123',
-                first_name = 'Elba',
-                last_name = 'Zural',
-                is_staff=True,
-                is_superuser=False,
-                is_active=True
-            )
-
-            ventas = Area.objects.get(area_description='Ventas')
-            # Crear el perfil asociado al usuario
-            Profile.objects.create(
-                user=user,
-                rut='13245678-8',
-                phone='532456789',
-                area= ventas
-            )
-            set_user_role_group(user, ROLE_AGENTE)
-
-@receiver(post_migrate)
-def create_default_customer(sender, **kwargs):
-    if not User.objects.filter(username='alambrito@cliente.cl').exists():
-        with transaction.atomic():
-            # Crear el usuario
-            user = User.objects.create_user(
-                username='alambrito@cliente.cl',
-                password='password123',
-                first_name = 'Alam',
-                last_name = 'Brito',
-                is_staff=False,
-                is_superuser=False,
-                is_active=True
-            )
-
-            # Crear el perfil asociado al usuario
-            Profile.objects.create(
-                user=user,
-                rut='15345478-8',
-                phone='982856789',
-            )
-            set_user_role_group(user, ROLE_CLIENTE)
+# 3.2.1: se retiraron los 3 receptores post_migrate que creaban cuentas
+# demo (Jefe de Mesa 'jefemesa@admin.cl', Agente 'agente@ventas.cl',
+# Cliente 'alambrito@cliente.cl') con la misma contrasena fija
+# ('password123') en TODO entorno, incluida produccion, sin ningun guard
+# por entorno. Hallazgo de seguridad de la Fase 3.1 (ver
+# claude/hallazgos-fase3.1-cliente.md en el proyecto): esas credenciales
+# quedaban ademas en texto plano en el historial de git y publicadas en
+# home.html/README.md.
+#
+# Decision de producto (3.2.1): los visitantes se auto-registran como
+# Cliente via customer_signup (sin cambios, ya restringe el rol server-
+# side). Agente/Jefe de Mesa se crean solo por mecanismos administrativos
+# controlados: agent_signup (requiere el permiso 'Helpdesk.register_agent',
+# ya protegido) para Agente, y el nuevo comando de gestion
+# 'create_jefe_de_mesa' (Helpdesk/management/commands/create_jefe_de_mesa.py)
+# para el primer Jefe de Mesa, que pide la contrasena de forma interactiva
+# y la valida contra AUTH_PASSWORD_VALIDATORS - nunca hardcodeada aqui.
+#
+# Una base de datos donde esas 3 cuentas demo ya existian de una corrida
+# anterior de este receptor NO se ve afectada por este cambio: el receptor
+# solo dejo de ejecutarse hacia adelante, no borra nada retroactivamente.
