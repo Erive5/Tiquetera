@@ -111,13 +111,22 @@ def create_default_admin(sender, **kwargs):
     if not User.objects.filter(username='jefemesa@admin.cl').exists():
         with transaction.atomic():
             # Crear el usuario
+            # 2.2D: nuevas instalaciones crean la cuenta demo del Jefe de
+            # Mesa SIN is_superuser ni is_staff. Sus 22 permisos RBAC (grupo
+            # 'Jefe de Mesa', asignado abajo via set_user_role_group) ya
+            # cubren toda su funcionalidad autorizada; is_superuser le daba
+            # acceso incondicional via el bypass de ModelBackend.has_perm(),
+            # contrario a "RBAC real". Una instalacion donde esta cuenta ya
+            # existia con los flags antiguos debe correr el comando
+            # 'demote_demo_jefe_de_mesa' una vez (este receptor post_migrate
+            # solo CREA la cuenta si no existe; no la actualiza despues).
             user = User.objects.create_user(
                 username='jefemesa@admin.cl',
                 password='password123',
                 first_name = 'Armando',
                 last_name = 'Casas',
-                is_staff=True,
-                is_superuser=True,
+                is_staff=False,
+                is_superuser=False,
                 is_active=True
             )
 
