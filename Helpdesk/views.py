@@ -5,9 +5,12 @@ from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseNotAllowed
+
+from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, set_user_role_group
 
 # USUARIOS
 def home(request):
@@ -16,7 +19,7 @@ def home(request):
 def signin(request):
     if request.method == 'GET':
         form= custom_authentication_form()
-        return render(request, 'signin.html', {'form': form})   
+        return render(request, 'signin.html', {'form': form})
     else:
        form= custom_authentication_form()
        user = authenticate(request, username = request.POST['username'], password = request.POST['password'])
@@ -27,7 +30,7 @@ def signin(request):
                })
        else:
            login(request, user)
-           return redirect('tickets')    
+           return redirect('tickets')
 
 @login_required
 def get_user_type(request):
@@ -79,7 +82,7 @@ def modify_user_data(request, id):
        form = modify_user_data_form (request.POST, instance=profile)
        form.save()
        return redirect('my_profile')
-        
+
 def modify_password(request, id):
     user = request.user
     form = modify_password_form(request.POST, instance=user)
@@ -101,29 +104,31 @@ def modify_password(request, id):
         form = modify_password_form()
     return render(request, 'modify_password.html', {'form': form, 'user': user})
 
-# CLIENTES 
+# CLIENTES
 def customer_signup(request):
     if request.method == 'GET':
         return render (request, 'customer/customer_signup.html', {'form': customer_creation_form})
-    try:    
-        new_user = User.objects.create_user(
-            username=request.POST['username'], 
-            password=request.POST['password1'], 
-            first_name=request.POST['first_name'].capitalize(), 
-            last_name=request.POST['last_name'].capitalize()
-        )
-        new_user.save()
+    try:
+        with transaction.atomic():
+            new_user = User.objects.create_user(
+                username=request.POST['username'],
+                password=request.POST['password1'],
+                first_name=request.POST['first_name'].capitalize(),
+                last_name=request.POST['last_name'].capitalize()
+            )
+            new_user.save()
+            set_user_role_group(new_user, ROLE_CLIENTE)
         if not request.user.is_authenticated:
             print("usuario valido")
             login(request, new_user)
             return redirect('customer_complete_profile', customer_id = new_user.id)
-        return redirect('customer_complete_profile', customer_id=new_user.id) 
+        return redirect('customer_complete_profile', customer_id=new_user.id)
     except Exception as e:
         err= e
         return render(request, 'customer/customer_signup.html', {'form': customer_creation_form,
                                                                 'error': err})
 
-def customer_complete_profile(request, customer_id=None): 
+def customer_complete_profile(request, customer_id=None):
     user = request.user
     print(user)
     if user.is_staff:  # Si es un agente
@@ -177,7 +182,7 @@ def customer_view(request, id):
     customer = get_object_or_404 (Profile, id=id)
     return render(request, 'customer/customer_view.html', {'customer': customer})
 
-# AGENTES 
+# AGENTES
 @login_required
 def list_agents(request):
     # Obtener todos los agentes
@@ -202,15 +207,17 @@ def agent_signup(request):
         return render (request, 'agents/agent_signup.html', {'form': customer_creation_form})
     else:
         if request.POST['password1'] == request.POST['password2']:
-            try:    
-                user = User.objects.create_user(
-                    username=request.POST['username'], 
-                    password=request.POST['password1'], 
-                    first_name= request.POST ['first_name'].capitalize(), 
-                    last_name= request.POST['last_name'].capitalize(),
-                )
-                user.is_staff = True
-                user.save()
+            try:
+                with transaction.atomic():
+                    user = User.objects.create_user(
+                        username=request.POST['username'],
+                        password=request.POST['password1'],
+                        first_name= request.POST ['first_name'].capitalize(),
+                        last_name= request.POST['last_name'].capitalize(),
+                    )
+                    user.is_staff = True
+                    user.save()
+                    set_user_role_group(user, ROLE_AGENTE)
                 new_agent = user
                 return redirect('agent_complete_profile', id = new_agent.id)
             except:
@@ -218,7 +225,7 @@ def agent_signup(request):
                                                         'error': 'El usuario ya existe.'})
         return render (request, 'agents/agent_signup.html', {'form': customer_creation_form,
                                                         'error': 'Constraseñas no coinciden.'})
-        
+
 @login_required
 def agent_complete_profile(request, id):
     new_agent = get_object_or_404(User, pk=id)
@@ -227,10 +234,10 @@ def agent_complete_profile(request, id):
         'first_name': new_agent.first_name,
         'last_name': new_agent.last_name,
     }
-    
+
     if request.method == 'GET':
         return render(request, 'agents/agent_complete_profile.html', {'form': agent_profile_form, 'user_data':user_data })
-    else: 
+    else:
         try:
             form = agent_profile_form(request.POST)
             new_profile = form.save(commit = False)
@@ -239,9 +246,9 @@ def agent_complete_profile(request, id):
             return redirect('agent_view', id = new_profile.id)
         except ValueError:
             return render(request, 'agents/agent_complete_profile.html', {
-                'form': agent_profile_form, 
+                'form': agent_profile_form,
                 'user_data':user_data,
-                'error': 'Por favor, ingresa datos válidos'})    
+                'error': 'Por favor, ingresa datos válidos'})
 # TICKET
 @login_required
 def create_ticket(request):
@@ -249,8 +256,8 @@ def create_ticket(request):
         return render(request, 'tickets/create_ticket.html', {
         'form': create_ticket_form,
         })
-    else: 
-        form = create_ticket_form(request.POST)    
+    else:
+        form = create_ticket_form(request.POST)
         if form.is_valid:
             current_user = request.user
             current_profile = Profile.objects.get(user = current_user)
@@ -266,10 +273,10 @@ def create_ticket(request):
 def ticket_view(request, id):
     user_type = get_user_type(request)
     ticket = get_object_or_404 (Ticket, id=id)
-    
+
     return render(request, 'tickets/ticket_view.html', {'ticket': ticket, 'user_type':user_type})
 
-@login_required   
+@login_required
 def edit_ticket(request, id):
     ticket = get_object_or_404(Ticket, id=id)
     can_resolve = ticket.solution and ticket.closure_agent and ticket.closing_date
@@ -289,7 +296,7 @@ def edit_ticket(request, id):
     error = 'Hubo un problema al cargar el formulario'
     return render(request, 'tickets/edit_ticket.html', {'create_form': create_form, 'closed_form': closed_form, 'ticket': ticket, 'can_resolve': can_resolve, 'error': error})
 
-@login_required  
+@login_required
 def solve_ticket(request,id):
     ticket = get_object_or_404(Ticket, id=id)
     if request.method == 'POST':
@@ -302,12 +309,12 @@ def solve_ticket(request,id):
             ticket = form.save()
             return redirect('ticket_view', id=id)
         else:
-            return render(request, {'form': form, 'error': 'Hubo un problema con el formulario'}) 
+            return render(request, {'form': form, 'error': 'Hubo un problema con el formulario'})
     else:
         form = opened_ticket_form(instance=ticket)
     return render(request, 'tickets/solve_ticket.html', {'ticket': ticket, 'form': form})
 
-@login_required  
+@login_required
 def solve_button (request, id):
     ticket = get_object_or_404(Ticket, id=id)
     if request.method == 'POST':
@@ -316,11 +323,11 @@ def solve_button (request, id):
         ticket.save()  # Guardar el ticket actualizado
         return redirect('tickets')
 
-@login_required  
+@login_required
 def delete_ticket(request, id):
     ticket = get_object_or_404(Ticket, id=id)
     if request.method == 'POST':
-        ticket.delete()  
+        ticket.delete()
         return redirect('tickets')
 
 @login_required
@@ -440,67 +447,67 @@ def get_ticket_data(tickets, request):
     }
     return data
 
-#ATRIBUTOS TICKET 
-@login_required  
+#ATRIBUTOS TICKET
+@login_required
 def manage_priorities(request):
     priorities = Priority.objects.all()
-    
+
     if request.method == 'POST':
         form = create_priority_form(request.POST)
         if form.is_valid():
             new_priority = form.save()
-            return redirect('priorities')  
+            return redirect('priorities')
     else:
         form = create_priority_form()
-    
+
     data = {'priorities': priorities, 'form': form}
     return render(request, 'tickets/priorities.html', data)
 
-@login_required  
+@login_required
 def manage_statuses(request):
     statuses = Status.objects.all()
-    
+
     if request.method == 'POST':
         form = create_status_form(request.POST)
         if form.is_valid():
             new_status = form.save()
-            return redirect('statuses')  
+            return redirect('statuses')
     else:
         form = create_status_form()
-    
+
     data = {'statuses': statuses, 'form': form}
     return render(request, 'tickets/statuses.html', data)
 
-@login_required  
+@login_required
 def manage_types(request):
     types = Type.objects.all()
-    
+
     if request.method == 'POST':
         form = create_type_form(request.POST)
         if form.is_valid():
             new_type = form.save()
-            return redirect('types')  
+            return redirect('types')
     else:
         form = create_type_form()
-    
+
     data = {'types': types, 'form': form}
     return render(request, 'tickets/types.html', data)
 
-@login_required      
+@login_required
 def manage_areas(request):
     areas = Area.objects.all()
-    
+
     if request.method == 'POST':
         form = create_area_form(request.POST)
         if form.is_valid():
             new_area = form.save()
-            return redirect('areas')  
+            return redirect('areas')
     else:
         form = create_area_form()
     data = {'areas': areas, 'form': form}
     return render(request, 'tickets/areas.html', data)
 
-@login_required  
+@login_required
 def edit_priority(request, id):
     priority = get_object_or_404(Priority, id=id)
     if request.method =='GET':
@@ -515,7 +522,7 @@ def edit_priority(request, id):
         error = 'No se puede editar esta prioridad'
         return render(request, 'tickets/edit_priority.html', {'priority': priority, 'form': form, 'error':error})
 
-@login_required      
+@login_required
 def edit_type(request, id):
     type = get_object_or_404(Type, id=id)
     if request.method =='GET':
@@ -530,7 +537,7 @@ def edit_type(request, id):
         error = 'No se puede editar este'
         return render(request, 'tickets/edit_type.html', {'type': type, 'form': form, 'error':error})
 
-@login_required  
+@login_required
 def edit_status(request, id):
     status = get_object_or_404(Status, id=id)
     if request.method =='GET':
@@ -545,7 +552,7 @@ def edit_status(request, id):
         error = 'No se puede editar esta prioridad'
         return render(request, 'tickets/edit_status.html', {'status': status, 'form': form, 'error':error})
 
-@login_required  
+@login_required
 def edit_area(request, id):
     area = get_object_or_404(Area, id=id)
     if request.method =='GET':
@@ -560,30 +567,30 @@ def edit_area(request, id):
         error = 'No se puede editar esta prioridad'
         return render(request, 'tickets/edit_area.html', {'area': area, 'form': form, 'error':error})
 
-@login_required  
+@login_required
 def delete_priority(request, id):
     priority = get_object_or_404(Priority, id=id)
     if request.method == 'POST':
-        priority.delete()  
+        priority.delete()
         return redirect('priorities')
 
-@login_required      
+@login_required
 def delete_type(request, id):
     type = get_object_or_404(Type, id=id)
     if request.method == 'POST':
-        type.delete()  
+        type.delete()
         return redirect('types')
 
-@login_required      
+@login_required
 def delete_status(request, id):
     status = get_object_or_404(Status, id=id)
     if request.method == 'POST':
-        status.delete()  
+        status.delete()
         return redirect('statuses')
 
-@login_required      
+@login_required
 def delete_area(request, id):
     area = get_object_or_404(Area, id=id)
     if request.method == 'POST':
-        area.delete()  
+        area.delete()
         return redirect('areas')

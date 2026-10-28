@@ -1,25 +1,27 @@
-from django.db import models
+from django.db import models, transaction
 from django.contrib.auth.models import User
 from django.db.models.signals import post_migrate
 from django.dispatch import receiver
+
+from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, ROLE_JEFE_DE_MESA, set_user_role_group
 
 # Create your models here.
 class Priority(models.Model):
     priority_description = models.CharField(max_length=45, verbose_name="Prioridad")
 
     class Meta:
-        verbose_name_plural = "Prioridades" 
+        verbose_name_plural = "Prioridades"
 
     def __str__(self):
         return self.priority_description
 
 class Status(models.Model):
-    status_description = models.CharField(max_length=45, 
-                                          null=True,verbose_name="Estado", 
-                                          default="Abierto") 
+    status_description = models.CharField(max_length=45,
+                                          null=True,verbose_name="Estado",
+                                          default="Abierto")
     class Meta:
         verbose_name_plural = "Estados"
-         
+
     def __str__(self):
         return self.status_description
 
@@ -27,28 +29,28 @@ class Type(models.Model):
     type_description = models.CharField(max_length=45, verbose_name="Tipo")
 
     class Meta:
-        verbose_name_plural = "Tipos" 
+        verbose_name_plural = "Tipos"
 
     def __str__(self):
         return self.type_description
-    
+
 class Area(models.Model):
     area_description = models.CharField(max_length=100, verbose_name="Área")
 
     class Meta:
-        verbose_name_plural = "Áreas" 
-    
+        verbose_name_plural = "Áreas"
+
     def __str__(self):
         return self.area_description
-    
+
 class Profile(models.Model):
     user = models.OneToOneField(User,on_delete=models.CASCADE, related_name='profile_user', verbose_name="Usuario")
     rut = models.CharField(max_length=12, verbose_name="RUT")
     phone = models.CharField(max_length=9, verbose_name="Teléfono")
     area = models.ForeignKey(Area, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Área")
-    
+
     class Meta:
-        verbose_name_plural = "Perfiles" 
+        verbose_name_plural = "Perfiles"
         permissions = [
             ("register_agent", "Can register new agent"),
             ("manage_user_status", "Can activate or deactivate a user"),
@@ -72,11 +74,11 @@ class Ticket(models.Model):
     closure_agent = models.ForeignKey(Profile, on_delete=models.CASCADE, verbose_name="Agente cierre",blank=True, null=True , related_name="closed_tickets")
     closing_date = models.DateField(null=True, verbose_name="Fecha cierre")
     class Meta:
-        verbose_name_plural = "Tickets" 
+        verbose_name_plural = "Tickets"
 
     def __str__(self):
         return self.issue
-            
+
 @receiver(post_migrate)
 def create_default_areas(sender, **kwargs):
     Area.objects.get_or_create(area_description='Administración')
@@ -107,66 +109,72 @@ def create_default_estado(sender, **kwargs):
 @receiver(post_migrate)
 def create_default_admin(sender, **kwargs):
     if not User.objects.filter(username='jefemesa@admin.cl').exists():
-        # Crear el usuario
-        user = User.objects.create_user(
-            username='jefemesa@admin.cl',
-            password='password123',
-            first_name = 'Armando',
-            last_name = 'Casas', 
-            is_staff=True,
-            is_superuser=True,
-            is_active=True
-        )
-        
-        administracion = Area.objects.get(area_description='Administración')
-        # Crear el perfil asociado al usuario
-        Profile.objects.create(
-            user=user,
-            rut='12345678-9', 
-            phone='123456789',
-            area=administracion
-        )
+        with transaction.atomic():
+            # Crear el usuario
+            user = User.objects.create_user(
+                username='jefemesa@admin.cl',
+                password='password123',
+                first_name = 'Armando',
+                last_name = 'Casas',
+                is_staff=True,
+                is_superuser=True,
+                is_active=True
+            )
+
+            administracion = Area.objects.get(area_description='Administración')
+            # Crear el perfil asociado al usuario
+            Profile.objects.create(
+                user=user,
+                rut='12345678-9',
+                phone='123456789',
+                area=administracion
+            )
+            set_user_role_group(user, ROLE_JEFE_DE_MESA)
 
 @receiver(post_migrate)
 def create_default_agent(sender, **kwargs):
     if not User.objects.filter(username='agente@ventas.cl').exists():
-        # Crear el usuario
-        user = User.objects.create_user(
-            username='agente@ventas.cl',
-            password='password123',
-            first_name = 'Elba',
-            last_name = 'Zural', 
-            is_staff=True,
-            is_superuser=False,
-            is_active=True
-        )
-        
-        ventas = Area.objects.get(area_description='Ventas')
-        # Crear el perfil asociado al usuario
-        Profile.objects.create(
-            user=user,
-            rut='13245678-8',  
-            phone='532456789',
-            area= ventas
-        )
+        with transaction.atomic():
+            # Crear el usuario
+            user = User.objects.create_user(
+                username='agente@ventas.cl',
+                password='password123',
+                first_name = 'Elba',
+                last_name = 'Zural',
+                is_staff=True,
+                is_superuser=False,
+                is_active=True
+            )
+
+            ventas = Area.objects.get(area_description='Ventas')
+            # Crear el perfil asociado al usuario
+            Profile.objects.create(
+                user=user,
+                rut='13245678-8',
+                phone='532456789',
+                area= ventas
+            )
+            set_user_role_group(user, ROLE_AGENTE)
 
 @receiver(post_migrate)
 def create_default_customer(sender, **kwargs):
     if not User.objects.filter(username='alambrito@cliente.cl').exists():
-        # Crear el usuario
-        user = User.objects.create_user(
-            username='alambrito@cliente.cl',
-            password='password123',
-            first_name = 'Alam',
-            last_name = 'Brito', 
-            is_staff=False,
-            is_superuser=False,
-            is_active=True
-        )
+        with transaction.atomic():
+            # Crear el usuario
+            user = User.objects.create_user(
+                username='alambrito@cliente.cl',
+                password='password123',
+                first_name = 'Alam',
+                last_name = 'Brito',
+                is_staff=False,
+                is_superuser=False,
+                is_active=True
+            )
 
-        # Crear el perfil asociado al usuario
-        Profile.objects.create(
-            user=user,
-            rut='15345478-8', 
-            phone='982856789',
-        )
+            # Crear el perfil asociado al usuario
+            Profile.objects.create(
+                user=user,
+                rut='15345478-8',
+                phone='982856789',
+            )
+            set_user_role_group(user, ROLE_CLIENTE)
