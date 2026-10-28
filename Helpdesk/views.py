@@ -6,6 +6,8 @@ from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.db.models import Q
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponseNotAllowed
 
 # USUARIOS
 def home(request):

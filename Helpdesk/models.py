@@ -16,7 +16,7 @@ class Priority(models.Model):
 class Status(models.Model):
     status_description = models.CharField(max_length=45, 
                                           null=True,verbose_name="Estado", 
-                                          default="Abierto") #permite el cambio de estado de tique de los ejecutivos
+                                          default="Abierto") 
     class Meta:
         verbose_name_plural = "Estados"
          
@@ -49,6 +49,10 @@ class Profile(models.Model):
     
     class Meta:
         verbose_name_plural = "Perfiles" 
+        permissions = [
+            ("register_agent", "Can register new agent"),
+            ("manage_user_status", "Can activate or deactivate a user"),
+        ]
     def __str__(self):
         # Accede al objeto User asociado y obtén los campos rut, first_name y last_name
         full_name = f"{self.user.first_name} {self.user.last_name}"
@@ -118,7 +122,7 @@ def create_default_admin(sender, **kwargs):
         # Crear el perfil asociado al usuario
         Profile.objects.create(
             user=user,
-            rut='12345678-9',  # Puedes ajustar este valor según tus necesidades
+            rut='12345678-9', 
             phone='123456789',
             area=administracion
         )
@@ -141,7 +145,7 @@ def create_default_agent(sender, **kwargs):
         # Crear el perfil asociado al usuario
         Profile.objects.create(
             user=user,
-            rut='13245678-8',  # Puedes ajustar este valor según tus necesidades
+            rut='13245678-8',  
             phone='532456789',
             area= ventas
         )
@@ -163,6 +167,6 @@ def create_default_customer(sender, **kwargs):
         # Crear el perfil asociado al usuario
         Profile.objects.create(
             user=user,
-            rut='15345478-8',  # Puedes ajustar este valor según tus necesidades
+            rut='15345478-8', 
             phone='982856789',
         )
