@@ -362,10 +362,36 @@ def create_ticket(request):
 
 @login_required
 def ticket_view(request, id):
-    user_type = get_user_type(request)
-    ticket = get_object_or_404 (Ticket, id=id)
+    # 2.2C.2: autorizacion real de acceso a un ticket por id. Antes esta
+    # vista no tenia ningun chequeo (get_user_type() solo decidia que
+    # botones mostrar en la plantilla) -> cualquier autenticado podia leer
+    # cualquier ticket ajeno por URL directa. Orden establecido: existencia
+    # (404) -> permiso Helpdesk.view_ticket (403) -> alcance por rol (403).
+    ticket = get_object_or_404(Ticket, id=id)
 
-    return render(request, 'tickets/ticket_view.html', {'ticket': ticket, 'user_type':user_type})
+    if not request.user.has_perm('Helpdesk.view_ticket'):
+        raise PermissionDenied
+
+    if user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        pass  # acceso total, via pertenencia a grupo (no via is_superuser)
+    elif user_in_group(request.user, ROLE_AGENTE):
+        requester_profile = get_object_or_404(Profile, user=request.user)
+        if not Ticket.objects.filter(pk=ticket.pk).filter(
+            agent_ticket_scope_q(requester_profile)
+        ).exists():
+            raise PermissionDenied
+    elif user_in_group(request.user, ROLE_CLIENTE):
+        requester_profile = get_object_or_404(Profile, user=request.user)
+        if ticket.customer_id != requester_profile.id:
+            raise PermissionDenied
+    else:
+        # Tiene Helpdesk.view_ticket (ej. superuser) pero no pertenece a
+        # ninguno de los 3 grupos RBAC de negocio: no hay regla de alcance
+        # definida para este caso, se deniega.
+        raise PermissionDenied
+
+    user_type = get_user_type(request)
+    return render(request, 'tickets/ticket_view.html', {'ticket': ticket, 'user_type': user_type})
 
 @login_required
 def edit_ticket(request, id):

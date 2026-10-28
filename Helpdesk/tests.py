@@ -1769,3 +1769,175 @@ class ListTicketsScopeTests(TestCase):
         resp = self.client.get(reverse("tickets"))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(list(resp.context["tickets"]), [propio])
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2C.2: autorizacion real de ticket_view (acceso directo por id).
+# ---------------------------------------------------------------------------
+
+class TicketViewAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _make_ticket(self, customer, **kwargs):
+        n = Ticket.objects.count()
+        return Ticket.objects.create(
+            issue="T",
+            priority=Priority.objects.create(priority_description=f"P-{n}"),
+            type=Type.objects.create(type_description=f"Tp-{n}"),
+            status=Status.objects.create(status_description=f"S-{n}"),
+            customer=customer,
+            observation="obs",
+            **kwargs,
+        )
+
+    def test_anonymous_is_redirected_to_login(self):
+        cliente_user = User.objects.create_user(username="cliente_tv_anon@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="200-0", phone="2000")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        ticket = self._make_ticket(cliente_profile)
+
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 302)
+        # settings.LOGIN_URL = '/signin' (sin slash final) y @login_required
+        # redirige con ese valor tal cual + '?next=...'; reverse("signin")
+        # da '/signin/' (con slash), que nunca aparece literal en resp.url.
+        self.assertTrue(resp.url.startswith("/signin"))
+
+    def test_ticket_inexistente_devuelve_404(self):
+        cliente_user = User.objects.create_user(username="cliente_tv_404@test.cl", password="x")
+        Profile.objects.create(user=cliente_user, rut="201-1", phone="2011")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("ticket_view", args=[999999]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_usuario_sin_grupo_rbac_no_puede_ver_ticket(self):
+        cliente_user = User.objects.create_user(username="cliente_tv_sg@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="202-2", phone="2022")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        ticket = self._make_ticket(cliente_profile)
+
+        sin_grupo_user = User.objects.create_user(username="sin_grupo_tv@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=sin_grupo_user, rut="203-3", phone="2033")
+
+        self.client.force_login(sin_grupo_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_cliente_ve_su_propio_ticket(self):
+        cliente_user = User.objects.create_user(username="cliente_tv_propio@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="204-4", phone="2044")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context["ticket"], ticket)
+
+    def test_cliente_no_puede_ver_ticket_de_otro_cliente(self):
+        dueño_user = User.objects.create_user(username="cliente_tv_dueño@test.cl", password="x")
+        dueño_profile = Profile.objects.create(user=dueño_user, rut="205-5", phone="2055")
+        set_user_role_group(dueño_user, ROLE_CLIENTE)
+        ticket = self._make_ticket(dueño_profile)
+
+        otro_user = User.objects.create_user(username="cliente_tv_otro@test.cl", password="x")
+        Profile.objects.create(user=otro_user, rut="206-6", phone="2066")
+        set_user_role_group(otro_user, ROLE_CLIENTE)
+
+        self.client.force_login(otro_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_agente_con_area_ve_ticket_de_su_area(self):
+        area = Area.objects.create(area_description="Area-TV1")
+        agente_user = User.objects.create_user(username="agente_tv_area@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=agente_user, rut="207-7", phone="2077", area=area)
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_tv_area@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="208-8", phone="2088")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_agente_sin_area_no_ve_ticket_sin_area_asignada(self):
+        agente_user = User.objects.create_user(username="agente_tv_sa@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=agente_user, rut="209-9", phone="2099")  # sin area
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_tv_sa@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="210-0", phone="2100")
+        ticket = self._make_ticket(cliente_profile)  # asigned_area=None
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_agente_ve_ticket_por_opening_agent_sin_depender_de_area(self):
+        agente_user = User.objects.create_user(username="agente_tv_oa@test.cl", password="x", is_staff=True)
+        agente_profile = Profile.objects.create(user=agente_user, rut="211-1", phone="2111")  # sin area
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_tv_oa@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="212-2", phone="2122")
+        ticket = self._make_ticket(cliente_profile, opening_agent=agente_profile)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_agente_ve_ticket_por_closure_agent_sin_depender_de_area(self):
+        agente_user = User.objects.create_user(username="agente_tv_ca@test.cl", password="x", is_staff=True)
+        agente_profile = Profile.objects.create(user=agente_user, rut="213-3", phone="2133")  # sin area
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_tv_ca@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="214-4", phone="2144")
+        ticket = self._make_ticket(cliente_profile, closure_agent=agente_profile)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_agente_no_puede_ver_ticket_fuera_de_alcance(self):
+        area_propia = Area.objects.create(area_description="Area-TV-propia")
+        area_ajena = Area.objects.create(area_description="Area-TV-ajena")
+        agente_user = User.objects.create_user(username="agente_tv_fa@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=agente_user, rut="215-5", phone="2155", area=area_propia)
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_tv_fa@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="216-6", phone="2166")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area_ajena)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_jefe_de_mesa_non_superuser_ve_cualquier_ticket(self):
+        jefe_user = User.objects.create_user(username="jefe_tv@test.cl", password="x", is_superuser=False)
+        Profile.objects.create(user=jefe_user, rut="217-7", phone="2177")
+        set_user_role_group(jefe_user, ROLE_JEFE_DE_MESA)
+
+        cliente_user = User.objects.create_user(username="cliente_tv_jefe@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="218-8", phone="2188")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_jefe_de_mesa_demo_superuser_ve_cualquier_ticket(self):
+        demo = User.objects.get(username="jefemesa@admin.cl")
+        cliente_user = User.objects.create_user(username="cliente_tv_demo@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="219-9", phone="2199")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(demo)
+        resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
