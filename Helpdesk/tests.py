@@ -555,6 +555,24 @@ class EditDeletePriorityAuthorizationTests(TestCase):
         self.priority.refresh_from_db()
         self.assertEqual(self.priority.priority_description, "Editada")
 
+    def test_edit_invalid_data_shows_errors_without_saving_or_500(self):
+        # 2.5: antes `if form.is_valid:` (sin parentesis, siempre verdadero)
+        # hacia que esto guardara igual, o que una rama inalcanzable del
+        # if/elif/else devolviera None -> error de servidor. Ahora debe
+        # devolver 200 con los errores del formulario, sin tocar el dato.
+        user = User.objects.create_user(username="jefe_ep3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_priority", args=[self.priority.id]),
+            {"priority_description": ""},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context['form'].is_valid())
+        self.assertContains(resp, "This field is required")
+        self.priority.refresh_from_db()
+        self.assertEqual(self.priority.priority_description, "Para editar")
+
     def test_edit_disallowed_method_returns_405(self):
         user = User.objects.create_user(username="jefe_ep2@test.cl", password="x")
         set_user_role_group(user, ROLE_JEFE_DE_MESA)
@@ -883,6 +901,21 @@ class EditDeleteTypeAuthorizationTests(TestCase):
         self.type_obj.refresh_from_db()
         self.assertEqual(self.type_obj.type_description, "Editado")
 
+    def test_edit_invalid_data_shows_errors_without_saving_or_500(self):
+        # 2.5: mismo caso que EditDeletePriorityAuthorizationTests (ver comentario ahi).
+        user = User.objects.create_user(username="jefe_et3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_type", args=[self.type_obj.id]),
+            {"type_description": ""},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context['form'].is_valid())
+        self.assertContains(resp, "This field is required")
+        self.type_obj.refresh_from_db()
+        self.assertEqual(self.type_obj.type_description, "Para editar")
+
     def test_edit_disallowed_method_returns_405(self):
         user = User.objects.create_user(username="jefe_et2@test.cl", password="x")
         set_user_role_group(user, ROLE_JEFE_DE_MESA)
@@ -963,6 +996,21 @@ class EditDeleteStatusAuthorizationTests(TestCase):
         self.status_obj.refresh_from_db()
         self.assertEqual(self.status_obj.status_description, "Editado")
 
+    def test_edit_invalid_data_shows_errors_without_saving_or_500(self):
+        # 2.5: mismo caso que EditDeletePriorityAuthorizationTests (ver comentario ahi).
+        user = User.objects.create_user(username="jefe_es3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_status", args=[self.status_obj.id]),
+            {"status_description": ""},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context['form'].is_valid())
+        self.assertContains(resp, "This field is required")
+        self.status_obj.refresh_from_db()
+        self.assertEqual(self.status_obj.status_description, "Para editar")
+
     def test_edit_disallowed_method_returns_405(self):
         user = User.objects.create_user(username="jefe_es2@test.cl", password="x")
         set_user_role_group(user, ROLE_JEFE_DE_MESA)
@@ -1041,6 +1089,21 @@ class EditAreaAuthorizationTests(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.area.refresh_from_db()
         self.assertEqual(self.area.area_description, "Editada")
+
+    def test_edit_invalid_data_shows_errors_without_saving_or_500(self):
+        # 2.5: mismo caso que EditDeletePriorityAuthorizationTests (ver comentario ahi).
+        user = User.objects.create_user(username="jefe_ea3@test.cl", password="x")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("edit_area", args=[self.area.id]),
+            {"area_description": ""},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.context['form'].is_valid())
+        self.assertContains(resp, "This field is required")
+        self.area.refresh_from_db()
+        self.assertEqual(self.area.area_description, "Para editar")
 
     def test_edit_disallowed_method_returns_405(self):
         user = User.objects.create_user(username="jefe_ea2@test.cl", password="x")

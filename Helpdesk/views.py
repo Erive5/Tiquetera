@@ -872,69 +872,76 @@ def manage_areas(request):
 @require_http_methods(["GET", "POST"])
 @permission_required('Helpdesk.change_priority', raise_exception=True)
 def edit_priority(request, id):
+    # 2.5: `if form.is_valid:` (sin parentesis) era una referencia al metodo,
+    # siempre verdadera - full_clean() nunca se ejecutaba y form.save() corria
+    # con datos invalidos. Ademas, el `elif`/`else` dejaba el caso POST
+    # invalido sin ningun `return` (el `else` era inalcanzable: require_http_methods
+    # ya restringe a GET/POST) -> la vista devolvia None y Django lanzaba un
+    # error de servidor. Se corrige igual que create_ticket en 2.2C.4: se
+    # valida con is_valid() real y se renderiza el mismo formulario con sus
+    # errores cuando es invalido, sin caer en una rama inalcanzable.
     priority = get_object_or_404(Priority, id=id)
-    if request.method =='GET':
+    error = None
+    if request.method == 'GET':
         form = create_priority_form(instance=priority)
-        return render(request, 'tickets/edit_priority.html', {'priority':priority, 'form':form})
-    elif request.method =='POST':
+    else:
         form = create_priority_form(request.POST, instance=priority)
-        if form.is_valid:
+        if form.is_valid():
             form.save()
             return redirect('priorities')
-    else:
-        error = 'No se puede editar esta prioridad'
-        return render(request, 'tickets/edit_priority.html', {'priority': priority, 'form': form, 'error':error})
+        error = 'Hubo un problema al guardar la prioridad. Revise los errores del formulario.'
+    return render(request, 'tickets/edit_priority.html', {'priority': priority, 'form': form, 'error': error})
 
 @login_required
 @require_http_methods(["GET", "POST"])
 @permission_required('Helpdesk.change_type', raise_exception=True)
 def edit_type(request, id):
+    # 2.5: mismo bug y misma correccion que edit_priority (ver comentario ahi).
     type = get_object_or_404(Type, id=id)
-    if request.method =='GET':
+    error = None
+    if request.method == 'GET':
         form = create_type_form(instance=type)
-        return render(request, 'tickets/edit_type.html', {'type':type, 'form':form})
-    elif request.method =='POST':
+    else:
         form = create_type_form(request.POST, instance=type)
-        if form.is_valid:
+        if form.is_valid():
             form.save()
             return redirect('types')
-    else:
-        error = 'No se puede editar este'
-        return render(request, 'tickets/edit_type.html', {'type': type, 'form': form, 'error':error})
+        error = 'Hubo un problema al guardar el tipo. Revise los errores del formulario.'
+    return render(request, 'tickets/edit_type.html', {'type': type, 'form': form, 'error': error})
 
 @login_required
 @require_http_methods(["GET", "POST"])
 @permission_required('Helpdesk.change_status', raise_exception=True)
 def edit_status(request, id):
+    # 2.5: mismo bug y misma correccion que edit_priority (ver comentario ahi).
     status = get_object_or_404(Status, id=id)
-    if request.method =='GET':
+    error = None
+    if request.method == 'GET':
         form = create_status_form(instance=status)
-        return render(request, 'tickets/edit_status.html', {'status':status, 'form':form})
-    elif request.method =='POST':
+    else:
         form = create_status_form(request.POST, instance=status)
-        if form.is_valid:
+        if form.is_valid():
             form.save()
             return redirect('statuses')
-    else:
-        error = 'No se puede editar esta prioridad'
-        return render(request, 'tickets/edit_status.html', {'status': status, 'form': form, 'error':error})
+        error = 'Hubo un problema al guardar el estado. Revise los errores del formulario.'
+    return render(request, 'tickets/edit_status.html', {'status': status, 'form': form, 'error': error})
 
 @login_required
 @require_http_methods(["GET", "POST"])
 @permission_required('Helpdesk.change_area', raise_exception=True)
 def edit_area(request, id):
+    # 2.5: mismo bug y misma correccion que edit_priority (ver comentario ahi).
     area = get_object_or_404(Area, id=id)
-    if request.method =='GET':
+    error = None
+    if request.method == 'GET':
         form = create_area_form(instance=area)
-        return render(request, 'tickets/edit_area.html', {'area':area, 'form':form})
-    elif request.method =='POST':
+    else:
         form = create_area_form(request.POST, instance=area)
-        if form.is_valid:
+        if form.is_valid():
             form.save()
             return redirect('areas')
-    else:
-        error = 'No se puede editar esta prioridad'
-        return render(request, 'tickets/edit_area.html', {'area': area, 'form': form, 'error':error})
+        error = 'Hubo un problema al guardar el área. Revise los errores del formulario.'
+    return render(request, 'tickets/edit_area.html', {'area': area, 'form': form, 'error': error})
 
 def _profile_has_dependent_tickets(profile):
     """Un Profile puede estar ligado a Tickets como cliente, agente de apertura
