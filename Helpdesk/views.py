@@ -343,22 +343,98 @@ def agent_complete_profile(request, id):
 # TICKET
 @login_required
 def create_ticket(request):
-    if request.method == 'GET':
-        return render(request, 'tickets/create_ticket.html', {
-        'form': create_ticket_form,
-        })
+    # 2.2C.4: autorizacion y proteccion de create_ticket. Esta vista tenia
+    # dos bugs que la dejaban completamente rota, en GET y en POST:
+    #   (a) GET pasaba la CLASE del formulario (create_ticket_form) en vez
+    #       de una instancia (create_ticket_form()) -> AttributeError al
+    #       renderizar (label_tag no existe en un campo de clase sin
+    #       instanciar).
+    #   (b) POST comprobaba `if form.is_valid:` (sin parentesis, siempre
+    #       verdadero) -> full_clean() nunca se ejecutaba, form.save(
+    #       commit=False) devolvia un Ticket() vacio y el guardado fallaba
+    #       con IntegrityError en cualquier envio real (priority/type/
+    #       customer son FKs obligatorios sin default).
+    # Se corrigen ambos como base imprescindible para poder autorizar algo
+    # que de verdad se ejecuta.
+    if not request.user.has_perm('Helpdesk.add_ticket'):
+        raise PermissionDenied
+
+    if user_in_group(request.user, ROLE_CLIENTE):
+        is_cliente = True
+    elif user_in_group(request.user, ROLE_AGENTE) or user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        is_cliente = False
     else:
-        form = create_ticket_form(request.POST)
-        if form.is_valid:
-            current_user = request.user
-            current_profile = Profile.objects.get(user = current_user)
-            new_ticket = form.save(commit=False)
-            new_ticket.opening_agent = current_profile
+        # Tiene Helpdesk.add_ticket (ej. superuser) pero no pertenece a
+        # ninguno de los 3 grupos RBAC de negocio: no hay regla de creacion
+        # definida para este caso, se deniega (sin depender de is_superuser,
+        # que ModelBackend.has_perm() ya habria concedido automaticamente).
+        raise PermissionDenied
+
+    requester_profile = get_object_or_404(Profile, user=request.user)
+    user_type = get_user_type(request)
+
+    def build_form(data=None):
+        form = create_ticket_form(data) if data is not None else create_ticket_form()
+        if is_cliente:
+            # 2.2C.4, regla 4: Cliente no debe ver ni poder enviar campos
+            # administrativos (estado, cliente propietario, area). Se
+            # retiran de ESTA instancia del formulario, antes de
+            # is_valid()/renderizado, sin modificar la definicion estatica
+            # de create_ticket_form (compartida con edit_ticket). Al no
+            # estar en form.fields, Django tampoco los exige ni los valida
+            # a nivel de modelo (_get_validation_exclusions() los excluye),
+            # y un POST manipulado que intente incluirlos es ignorado por
+            # el formulario: se procesa server-side mas abajo.
+            del form.fields['status']
+            del form.fields['customer']
+            del form.fields['asigned_area']
+        return form
+
+    if request.method == 'GET':
+        form = build_form()
+        return render(request, 'tickets/create_ticket.html', {
+            'form': form,
+            'user_type': user_type,
+        })
+
+    form = build_form(request.POST)
+    if form.is_valid():
+        try:
             current_status = Status.objects.get(status_description='A resolución')
-            new_ticket.status = current_status
-            new_ticket.save()
-            print(new_ticket)
+        except (Status.DoesNotExist, Status.MultipleObjectsReturned):
+            # 2.2C.4, regla 4: el estado inicial se busca por descripcion
+            # (no por ID hardcodeado); si no existe o es ambiguo, no debe
+            # producir un error 500, sino un error de formulario legible.
+            form.add_error(None, 'No fue posible determinar el estado inicial del ticket. Contacte al administrador.')
+        else:
+            with transaction.atomic():
+                new_ticket = form.save(commit=False)
+                if is_cliente:
+                    # Reglas aprobadas para autoservicio: el ticket queda
+                    # sin triage (sin agente de apertura/cierre ni area),
+                    # visible solo para Jefe de Mesa hasta que le asigne un
+                    # area y pase a la bandeja compartida de los agentes.
+                    new_ticket.customer = requester_profile
+                    new_ticket.opening_agent = None
+                    new_ticket.closure_agent = None
+                    new_ticket.asigned_area = None
+                else:
+                    # Agente/Jefe de Mesa creando para un cliente: se
+                    # preserva el comportamiento existente (quedan como
+                    # agente de apertura; customer/asigned_area vienen del
+                    # formulario, con customer ya restringido al grupo
+                    # Cliente en forms.py).
+                    new_ticket.opening_agent = requester_profile
+                new_ticket.status = current_status
+                new_ticket.save()
             return redirect('ticket_view', id=new_ticket.id)
+
+    error = 'Hubo un problema al cargar el formulario'
+    return render(request, 'tickets/create_ticket.html', {
+        'form': form,
+        'user_type': user_type,
+        'error': error,
+    })
 
 @login_required
 def ticket_view(request, id):
@@ -395,7 +471,41 @@ def ticket_view(request, id):
 
 @login_required
 def edit_ticket(request, id):
+    # 2.2C.3: autorizacion real de edicion. Antes esta vista no tenia ningun
+    # chequeo (solo @login_required) -> cualquier autenticado podia editar
+    # cualquier ticket ajeno, incluyendo reasignar customer/asigned_area y
+    # falsificar closure_agent via POST. Mismo orden que ticket_view:
+    # existencia (404) -> permiso Helpdesk.change_ticket (403) -> alcance
+    # por rol (403). Cliente no tiene change_ticket en la matriz, asi que
+    # queda excluido por el chequeo de permiso sin necesidad de un caso
+    # especial.
     ticket = get_object_or_404(Ticket, id=id)
+
+    if not request.user.has_perm('Helpdesk.change_ticket'):
+        raise PermissionDenied
+
+    is_jefe_de_mesa = user_in_group(request.user, ROLE_JEFE_DE_MESA)
+    if is_jefe_de_mesa:
+        pass  # acceso total, via pertenencia a grupo (no via is_superuser)
+    elif user_in_group(request.user, ROLE_AGENTE):
+        requester_profile = get_object_or_404(Profile, user=request.user)
+        if not Ticket.objects.filter(pk=ticket.pk).filter(
+            agent_ticket_scope_q(requester_profile)
+        ).exists():
+            raise PermissionDenied
+    else:
+        # Tiene Helpdesk.change_ticket pero no pertenece a ninguno de los 3
+        # grupos RBAC de negocio: no hay regla de alcance definida, se deniega.
+        raise PermissionDenied
+
+    # customer es inmutable durante la edicion para TODOS los roles, y
+    # asigned_area solo la puede reasignar el Jefe de Mesa. create_ticket_form
+    # sigue exponiendo ambos campos (sin cambios en forms.py, eso queda para
+    # el bloque dedicado); se revierte server-side lo que el POST intente
+    # cambiar en esos campos, en vez de modificar el formulario.
+    original_customer_id = ticket.customer_id
+    original_area_id = ticket.asigned_area_id
+
     can_resolve = ticket.solution and ticket.closure_agent and ticket.closing_date
 
     if request.method == 'POST':
@@ -403,6 +513,14 @@ def edit_ticket(request, id):
         closed_form = opened_ticket_form(request.POST, instance=ticket) if can_resolve else None
 
         if create_form.is_valid() and (not can_resolve or closed_form.is_valid()):
+            ticket.customer_id = original_customer_id
+            if not is_jefe_de_mesa:
+                ticket.asigned_area_id = original_area_id
+            if can_resolve:
+                # closure_agent no debe poder falsificarse via POST (el
+                # campo del formulario permite elegir cualquier perfil
+                # staff): se fija a quien realmente esta editando.
+                ticket.closure_agent = get_object_or_404(Profile, user=request.user)
             create_form.save()
             ticket.save()  # Guardar el ticket actualizado
             return redirect('ticket_view', id=ticket.id)
@@ -415,11 +533,32 @@ def edit_ticket(request, id):
 
 @login_required
 def solve_ticket(request,id):
+    # 2.2C.3: mismo candado de autorizacion que edit_ticket (existencia ->
+    # permiso Helpdesk.change_ticket -> alcance por rol).
     ticket = get_object_or_404(Ticket, id=id)
+
+    if not request.user.has_perm('Helpdesk.change_ticket'):
+        raise PermissionDenied
+
+    is_jefe_de_mesa = user_in_group(request.user, ROLE_JEFE_DE_MESA)
+    if is_jefe_de_mesa:
+        pass
+    elif user_in_group(request.user, ROLE_AGENTE):
+        requester_profile = get_object_or_404(Profile, user=request.user)
+        if not Ticket.objects.filter(pk=ticket.pk).filter(
+            agent_ticket_scope_q(requester_profile)
+        ).exists():
+            raise PermissionDenied
+    else:
+        raise PermissionDenied
+
     if request.method == 'POST':
         form = opened_ticket_form(request.POST, instance=ticket)
         if form.is_valid():
             ticket = form.save(commit=False)
+            # closure_agent no debe poder falsificarse via POST: se fija a
+            # quien realmente esta resolviendo el ticket.
+            ticket.closure_agent = get_object_or_404(Profile, user=request.user)
             current_status = Status.objects.get(status_description='Resuelto')
             ticket.status = current_status
             ticket.closing_date = timezone.now()
@@ -432,13 +571,34 @@ def solve_ticket(request,id):
     return render(request, 'tickets/solve_ticket.html', {'ticket': ticket, 'form': form})
 
 @login_required
+@require_http_methods(["POST"])
 def solve_button (request, id):
+    # 2.2C.3: antes esta vista no tenia @require_http_methods, asi que un
+    # GET caia en el flujo implicito (sin return) y Django lanzaba un error
+    # de servidor; ahora un GET da 405 limpio. La plantilla ya usa POST
+    # (ticket_view.html), sin cambios ahi. Mismo candado de autorizacion que
+    # edit_ticket/solve_ticket; no se toca la logica de status_id=2 (fuera
+    # de alcance de este incremento).
     ticket = get_object_or_404(Ticket, id=id)
-    if request.method == 'POST':
-        ticket.closing_date = timezone.now()
-        ticket.status_id = 2  # Cambiar el status_id a 2
-        ticket.save()  # Guardar el ticket actualizado
-        return redirect('tickets')
+
+    if not request.user.has_perm('Helpdesk.change_ticket'):
+        raise PermissionDenied
+
+    if user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        pass
+    elif user_in_group(request.user, ROLE_AGENTE):
+        requester_profile = get_object_or_404(Profile, user=request.user)
+        if not Ticket.objects.filter(pk=ticket.pk).filter(
+            agent_ticket_scope_q(requester_profile)
+        ).exists():
+            raise PermissionDenied
+    else:
+        raise PermissionDenied
+
+    ticket.closing_date = timezone.now()
+    ticket.status_id = 2  # Cambiar el status_id a 2
+    ticket.save()  # Guardar el ticket actualizado
+    return redirect('tickets')
 
 @login_required
 def delete_ticket(request, id):

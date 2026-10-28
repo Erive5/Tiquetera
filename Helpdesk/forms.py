@@ -3,6 +3,7 @@ from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
 from django.contrib.auth import update_session_auth_hash
 from .models import *
+from Helpdesk.rbac import ROLE_CLIENTE
 
 #FORMS USERS
 class custom_authentication_form(AuthenticationForm):
@@ -88,7 +89,12 @@ from .models import Profile, Status, Area, Ticket, Priority, Type
 
 class create_ticket_form(forms.ModelForm):
     customer = forms.ModelChoiceField(
-        queryset=Profile.objects.filter(user__is_staff=False),
+        queryset=Profile.objects.filter(user__groups__name=ROLE_CLIENTE),
+        # 2.2C.4: antes filtraba por user__is_staff=False (heuristica), lo
+        # cual permitia seleccionar cualquier perfil no-staff, sin exigir
+        # pertenencia real al grupo RBAC Cliente. El selector de propietario
+        # (usado por Agente/Jefe de Mesa al crear tickets para un cliente)
+        # debe restringirse al grupo Cliente, sin depender de is_staff.
         widget=forms.Select(
             attrs={
                 'class': 'selectpicker',

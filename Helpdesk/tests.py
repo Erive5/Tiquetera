@@ -1941,3 +1941,494 @@ class TicketViewAuthorizationTests(TestCase):
         self.client.force_login(demo)
         resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
         self.assertEqual(resp.status_code, 200)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2C.3: autorizacion de edit_ticket, solve_ticket, solve_button.
+# ---------------------------------------------------------------------------
+
+class EditSolveTicketAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _make_ticket(self, customer, **kwargs):
+        n = Ticket.objects.count()
+        return Ticket.objects.create(
+            issue="T",
+            priority=Priority.objects.create(priority_description=f"P-{n}"),
+            type=Type.objects.create(type_description=f"Tp-{n}"),
+            status=Status.objects.create(status_description=f"S-{n}"),
+            customer=customer,
+            observation="obs",
+            **kwargs,
+        )
+
+    def _cliente(self, suffix):
+        user = User.objects.create_user(username=f"cliente_es_{suffix}@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut=f"3{suffix}-0", phone=f"30{suffix}")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def _agente(self, suffix, area=None):
+        user = User.objects.create_user(username=f"agente_es_{suffix}@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut=f"4{suffix}-0", phone=f"40{suffix}", area=area)
+        set_user_role_group(user, ROLE_AGENTE)
+        return user, profile
+
+    def _jefe(self, suffix):
+        # is_staff=True porque opened_ticket_form.closure_agent filtra por
+        # user__is_staff=True (migracion de ese queryset a grupo RBAC queda
+        # para el bloque de forms.py, no tocado en 2.2C.3); sin esto, un
+        # Jefe de Mesa no podria figurar como closure_agent en el formulario.
+        user = User.objects.create_user(username=f"jefe_es_{suffix}@test.cl", password="x", is_staff=True, is_superuser=False)
+        profile = Profile.objects.create(user=user, rut=f"5{suffix}-0", phone=f"50{suffix}")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    # ---- edit_ticket ----
+
+    def test_edit_cliente_no_puede_editar_403_sin_mutacion(self):
+        cliente_user, cliente_profile = self._cliente("ec1")
+        ticket = self._make_ticket(cliente_profile)
+        original_issue = ticket.issue
+
+        self.client.force_login(cliente_user)
+        resp = self.client.post(reverse("edit_ticket", args=[ticket.id]), {
+            "issue": "hackeado", "priority": ticket.priority_id, "type": ticket.type_id,
+            "status": ticket.status_id, "customer": cliente_profile.id, "observation": "x",
+            "asigned_area": "",
+        })
+        self.assertEqual(resp.status_code, 403)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.issue, original_issue)
+
+    def test_edit_agente_fuera_de_alcance_403_sin_mutacion(self):
+        agente_user, agente_profile = self._agente("ea1")
+        cliente_user, cliente_profile = self._cliente("ea2")
+        ticket = self._make_ticket(cliente_profile)  # sin area, sin relacion con el agente
+        original_issue = ticket.issue
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("edit_ticket", args=[ticket.id]), {
+            "issue": "hackeado", "priority": ticket.priority_id, "type": ticket.type_id,
+            "status": ticket.status_id, "customer": cliente_profile.id, "observation": "x",
+            "asigned_area": "",
+        })
+        self.assertEqual(resp.status_code, 403)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.issue, original_issue)
+
+    def test_edit_agente_en_alcance_puede_editar_campos_no_protegidos(self):
+        area = Area.objects.create(area_description="Area-ES1")
+        agente_user, agente_profile = self._agente("ea3", area=area)
+        _, cliente_profile = self._cliente("ea4")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area)
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("edit_ticket", args=[ticket.id]), {
+            "issue": "nuevo asunto", "priority": ticket.priority_id, "type": ticket.type_id,
+            "status": ticket.status_id, "customer": cliente_profile.id, "observation": "obs nueva",
+            "asigned_area": area.id,
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.issue, "nuevo asunto")
+        self.assertEqual(ticket.observation, "obs nueva")
+
+    def test_edit_agente_no_puede_reasignar_area_el_cambio_se_revierte(self):
+        area_propia = Area.objects.create(area_description="Area-ES2-propia")
+        area_otra = Area.objects.create(area_description="Area-ES2-otra")
+        agente_user, agente_profile = self._agente("ea5", area=area_propia)
+        _, cliente_profile = self._cliente("ea6")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area_propia)
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("edit_ticket", args=[ticket.id]), {
+            "issue": ticket.issue, "priority": ticket.priority_id, "type": ticket.type_id,
+            "status": ticket.status_id, "customer": cliente_profile.id, "observation": ticket.observation,
+            "asigned_area": area_otra.id,
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.asigned_area_id, area_propia.id)
+
+    def test_edit_jefe_de_mesa_non_superuser_puede_reasignar_area(self):
+        jefe_user, _ = self._jefe("ea7")
+        area_original = Area.objects.create(area_description="Area-ES3-original")
+        area_nueva = Area.objects.create(area_description="Area-ES3-nueva")
+        _, cliente_profile = self._cliente("ea8")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area_original)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.post(reverse("edit_ticket", args=[ticket.id]), {
+            "issue": ticket.issue, "priority": ticket.priority_id, "type": ticket.type_id,
+            "status": ticket.status_id, "customer": cliente_profile.id, "observation": ticket.observation,
+            "asigned_area": area_nueva.id,
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.asigned_area_id, area_nueva.id)
+
+    def test_edit_customer_inmutable_incluso_para_jefe_de_mesa(self):
+        # asigned_area es requerido por create_ticket_form (ModelChoiceField
+        # sin required=False, no hereda null=True del modelo): se postea el
+        # mismo valor existente para que el formulario sea valido y el
+        # fallo no se confunda con una 403/validacion ajena a este chequeo.
+        area = Area.objects.create(area_description="Area-ES5")
+        jefe_user, _ = self._jefe("ea9")
+        _, cliente_original = self._cliente("ea10")
+        _, cliente_otro = self._cliente("ea11")
+        ticket = self._make_ticket(cliente_original, asigned_area=area)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.post(reverse("edit_ticket", args=[ticket.id]), {
+            "issue": ticket.issue, "priority": ticket.priority_id, "type": ticket.type_id,
+            "status": ticket.status_id, "customer": cliente_otro.id, "observation": ticket.observation,
+            "asigned_area": area.id,
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.customer_id, cliente_original.id)
+
+    def test_edit_ticket_inexistente_404(self):
+        jefe_user, _ = self._jefe("ea12")
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("edit_ticket", args=[999999]))
+        self.assertEqual(resp.status_code, 404)
+
+    def test_edit_usuario_sin_grupo_rbac_403(self):
+        sin_grupo_user = User.objects.create_user(username="sin_grupo_es@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=sin_grupo_user, rut="60-0", phone="600")
+        _, cliente_profile = self._cliente("ea13")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(sin_grupo_user)
+        resp = self.client.get(reverse("edit_ticket", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    # ---- solve_ticket ----
+
+    def test_solve_ticket_closure_agent_no_se_puede_falsificar(self):
+        area = Area.objects.create(area_description="Area-ES4")
+        agente_user, agente_profile = self._agente("es1", area=area)
+        otro_agente_user, otro_agente_profile = self._agente("es2")
+        _, cliente_profile = self._cliente("es3")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area)
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("solve_ticket", args=[ticket.id]), {
+            "solution": "resuelto", "closure_agent": otro_agente_profile.id,
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.closure_agent_id, agente_profile.id)
+        self.assertNotEqual(ticket.closure_agent_id, otro_agente_profile.id)
+
+    def test_solve_ticket_cliente_no_puede_resolver_403_sin_mutacion(self):
+        cliente_user, cliente_profile = self._cliente("es4")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(cliente_user)
+        resp = self.client.post(reverse("solve_ticket", args=[ticket.id]), {
+            "solution": "resuelto", "closure_agent": cliente_profile.id,
+        })
+        self.assertEqual(resp.status_code, 403)
+        ticket.refresh_from_db()
+        self.assertIsNone(ticket.closure_agent)
+
+    def test_solve_ticket_agente_fuera_de_alcance_403(self):
+        agente_user, _ = self._agente("es5")  # sin area
+        _, cliente_profile = self._cliente("es6")
+        ticket = self._make_ticket(cliente_profile)  # sin area, sin relacion
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("solve_ticket", args=[ticket.id]), {
+            "solution": "resuelto", "closure_agent": "",
+        })
+        self.assertEqual(resp.status_code, 403)
+
+    def test_solve_ticket_jefe_de_mesa_non_superuser_puede_resolver(self):
+        jefe_user, jefe_profile = self._jefe("es7")
+        _, cliente_profile = self._cliente("es8")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.post(reverse("solve_ticket", args=[ticket.id]), {
+            "solution": "resuelto por jefe", "closure_agent": jefe_profile.id,
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.closure_agent_id, jefe_profile.id)
+        self.assertEqual(ticket.status.status_description, "Resuelto")
+
+    # ---- solve_button ----
+
+    def test_solve_button_requiere_post_get_devuelve_405(self):
+        jefe_user, _ = self._jefe("sb1")
+        _, cliente_profile = self._cliente("sb2")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("solve_button", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 405)
+
+    def test_solve_button_cliente_no_puede_resolver_403_sin_mutacion(self):
+        cliente_user, cliente_profile = self._cliente("sb3")
+        ticket = self._make_ticket(cliente_profile)
+        original_status_id = ticket.status_id
+
+        self.client.force_login(cliente_user)
+        resp = self.client.post(reverse("solve_button", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.status_id, original_status_id)
+        self.assertIsNone(ticket.closing_date)
+
+    def test_solve_button_agente_fuera_de_alcance_403_sin_mutacion(self):
+        agente_user, _ = self._agente("sb4")  # sin area
+        _, cliente_profile = self._cliente("sb5")
+        ticket = self._make_ticket(cliente_profile)  # sin area, sin relacion
+        original_status_id = ticket.status_id
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("solve_button", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+        ticket.refresh_from_db()
+        self.assertEqual(ticket.status_id, original_status_id)
+
+    def test_solve_button_agente_en_alcance_puede_resolver(self):
+        area = Area.objects.create(area_description="Area-SB6")
+        agente_user, agente_profile = self._agente("sb6", area=area)
+        _, cliente_profile = self._cliente("sb7")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area)
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("solve_button", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertIsNotNone(ticket.closing_date)
+
+    def test_solve_button_jefe_de_mesa_non_superuser_puede_resolver(self):
+        jefe_user, _ = self._jefe("sb8")
+        _, cliente_profile = self._cliente("sb9")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.post(reverse("solve_button", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        self.assertIsNotNone(ticket.closing_date)
+
+    def test_solve_button_usuario_sin_grupo_rbac_403(self):
+        sin_grupo_user = User.objects.create_user(username="sin_grupo_sb@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=sin_grupo_user, rut="61-0", phone="610")
+        _, cliente_profile = self._cliente("sb10")
+        ticket = self._make_ticket(cliente_profile)
+
+        self.client.force_login(sin_grupo_user)
+        resp = self.client.post(reverse("solve_button", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2C.4: autorizacion y seguridad de create_ticket
+# ---------------------------------------------------------------------------
+
+class CreateTicketAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _cliente(self, suffix):
+        user = User.objects.create_user(username=f"cliente_ct_{suffix}@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut=f"7{suffix}-0", phone=f"70{suffix}")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def _agente(self, suffix, area=None):
+        user = User.objects.create_user(username=f"agente_ct_{suffix}@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut=f"8{suffix}-0", phone=f"80{suffix}", area=area)
+        set_user_role_group(user, ROLE_AGENTE)
+        return user, profile
+
+    def _jefe(self, suffix):
+        user = User.objects.create_user(username=f"jefe_ct_{suffix}@test.cl", password="x", is_staff=True, is_superuser=False)
+        profile = Profile.objects.create(user=user, rut=f"9{suffix}-0", phone=f"90{suffix}")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def _valid_post_data(self, extra=None):
+        priority = Priority.objects.create(priority_description=f"P-{Priority.objects.count()}")
+        type_ = Type.objects.create(type_description=f"Tp-{Type.objects.count()}")
+        data = {
+            "issue": "No enciende el equipo",
+            "priority": priority.id,
+            "type": type_.id,
+            "observation": "obs",
+        }
+        if extra:
+            data.update(extra)
+        return data
+
+    # --- Cliente: creacion propia ---
+
+    def test_cliente_crea_ticket_propio_correctamente(self):
+        user, profile = self._cliente("1")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("create_ticket"), self._valid_post_data())
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Ticket.objects.count(), 1)
+        ticket = Ticket.objects.get()
+        self.assertEqual(ticket.customer_id, profile.id)
+        self.assertIsNone(ticket.opening_agent)
+        self.assertIsNone(ticket.closure_agent)
+        self.assertIsNone(ticket.asigned_area)
+        self.assertEqual(ticket.status.status_description, "A resolución")
+
+    def test_cliente_no_puede_crear_ticket_para_otro_cliente(self):
+        user, profile = self._cliente("2")
+        _, otro_profile = self._cliente("2b")
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("create_ticket"),
+            self._valid_post_data({"customer": otro_profile.id}),
+        )
+        self.assertEqual(resp.status_code, 302)
+        ticket = Ticket.objects.get()
+        # El campo customer fue retirado del formulario para Cliente: el
+        # valor manipulado en el POST se ignora y se fuerza al propio perfil.
+        self.assertEqual(ticket.customer_id, profile.id)
+
+    def test_cliente_no_puede_manipular_estado_area_ni_agentes(self):
+        user, profile = self._cliente("3")
+        otro_area = Area.objects.create(area_description="Area-ct-3")
+        _, otro_agente_profile = self._agente("3b")
+        status_resuelto = Status.objects.create(status_description="Resuelto-ct-3")
+        self.client.force_login(user)
+        resp = self.client.post(
+            reverse("create_ticket"),
+            self._valid_post_data({
+                "status": status_resuelto.id,
+                "asigned_area": otro_area.id,
+                "opening_agent": otro_agente_profile.id,
+                "closure_agent": otro_agente_profile.id,
+            }),
+        )
+        self.assertEqual(resp.status_code, 302)
+        ticket = Ticket.objects.get()
+        self.assertEqual(ticket.status.status_description, "A resolución")
+        self.assertIsNone(ticket.asigned_area)
+        self.assertIsNone(ticket.opening_agent)
+        self.assertIsNone(ticket.closure_agent)
+
+    def test_cliente_post_invalido_no_crea_registro_parcial(self):
+        user, profile = self._cliente("4")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("create_ticket"), {"issue": "", "observation": "obs"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(Ticket.objects.count(), 0)
+
+    # --- Agente / Jefe de Mesa: creacion para un cliente ---
+
+    def test_agente_crea_ticket_para_cliente_valido(self):
+        agente_user, agente_profile = self._agente("5")
+        _, cliente_profile = self._cliente("5b")
+        area = Area.objects.create(area_description="Area-ct-5")
+        status = Status.objects.create(status_description="S-ct-5")
+        self.client.force_login(agente_user)
+        resp = self.client.post(
+            reverse("create_ticket"),
+            self._valid_post_data({
+                "customer": cliente_profile.id,
+                "asigned_area": area.id,
+                "status": status.id,
+            }),
+        )
+        self.assertEqual(resp.status_code, 302)
+        ticket = Ticket.objects.get()
+        self.assertEqual(ticket.customer_id, cliente_profile.id)
+        self.assertEqual(ticket.opening_agent_id, agente_profile.id)
+        self.assertEqual(ticket.asigned_area_id, area.id)
+        self.assertEqual(ticket.status.status_description, "A resolución")
+
+    def test_jefe_de_mesa_crea_ticket_para_cliente_valido(self):
+        jefe_user, jefe_profile = self._jefe("6")
+        _, cliente_profile = self._cliente("6b")
+        area = Area.objects.create(area_description="Area-ct-6")
+        status = Status.objects.create(status_description="S-ct-6")
+        self.client.force_login(jefe_user)
+        resp = self.client.post(
+            reverse("create_ticket"),
+            self._valid_post_data({
+                "customer": cliente_profile.id,
+                "asigned_area": area.id,
+                "status": status.id,
+            }),
+        )
+        self.assertEqual(resp.status_code, 302)
+        ticket = Ticket.objects.get()
+        self.assertEqual(ticket.customer_id, cliente_profile.id)
+        self.assertEqual(ticket.opening_agent_id, jefe_profile.id)
+
+    def test_agente_no_puede_elegir_propietario_fuera_del_grupo_cliente(self):
+        agente_user, _ = self._agente("7")
+        _, otro_agente_profile = self._agente("7b")
+        area = Area.objects.create(area_description="Area-ct-7")
+        status = Status.objects.create(status_description="S-ct-7")
+        self.client.force_login(agente_user)
+        resp = self.client.post(
+            reverse("create_ticket"),
+            self._valid_post_data({
+                "customer": otro_agente_profile.id,
+                "asigned_area": area.id,
+                "status": status.id,
+            }),
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(Ticket.objects.count(), 0)
+
+    # --- Acceso denegado ---
+
+    def test_usuario_sin_grupo_rbac_no_puede_crear_ticket(self):
+        sin_grupo_user = User.objects.create_user(username="sin_grupo_ct@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=sin_grupo_user, rut="601-0", phone="6010")
+        self.client.force_login(sin_grupo_user)
+        resp = self.client.post(reverse("create_ticket"), self._valid_post_data())
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(Ticket.objects.count(), 0)
+
+    def test_usuario_sin_permiso_add_ticket_no_puede_crear_ticket(self):
+        # Grupo real, pero sin el permiso add_ticket (se lo quitamos tras
+        # seed_roles para simular una cuenta sin ese permiso).
+        user, profile = self._cliente("8")
+        group = Group.objects.get(name=ROLE_CLIENTE)
+        perm = Permission.objects.get(codename="add_ticket")
+        group.permissions.remove(perm)
+        self.client.force_login(user)
+        resp = self.client.post(reverse("create_ticket"), self._valid_post_data())
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(Ticket.objects.count(), 0)
+
+    def test_anonimo_redirigido_a_login(self):
+        resp = self.client.get(reverse("create_ticket"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.url.startswith("/signin"))
+
+    # --- Vista de carga del formulario (GET) ---
+
+    def test_cliente_get_no_muestra_campos_administrativos(self):
+        user, _ = self._cliente("9")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("create_ticket"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("status", resp.context["form"].fields)
+        self.assertNotIn("customer", resp.context["form"].fields)
+        self.assertNotIn("asigned_area", resp.context["form"].fields)
+
+    def test_agente_get_muestra_formulario_completo(self):
+        user, _ = self._agente("10")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("create_ticket"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("status", resp.context["form"].fields)
+        self.assertIn("customer", resp.context["form"].fields)
+        self.assertIn("asigned_area", resp.context["form"].fields)

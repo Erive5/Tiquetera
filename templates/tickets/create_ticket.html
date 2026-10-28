@@ -22,6 +22,7 @@
                     {{ form.type.label_tag }}
                     {{ form.type }}
                 </div>
+                {% if user_type != "Cliente" %}
                 <div class="form-group">
                     {{ form.status.label_tag }}
                     {{ form.status }}
@@ -30,14 +31,17 @@
                     {{ form.customer.label_tag }}
                     {{ form.customer }}
                 </div>
+                {% endif %}
                 <div class="form-group">
                     {{ form.observation.label_tag }}
                     {{ form.observation }}
                 </div>
+                {% if user_type != "Cliente" %}
                 <div class="form-group">
                     {{ form.asigned_area.label_tag }}
                     {{ form.asigned_area }}
                 </div>
+                {% endif %}
                 <button type="submit">Guardar</button>
             </form>
         </div>
