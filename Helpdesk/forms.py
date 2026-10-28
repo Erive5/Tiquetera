@@ -3,7 +3,7 @@ from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
 from django.contrib.auth import update_session_auth_hash
 from .models import *
-from Helpdesk.rbac import ROLE_CLIENTE
+from Helpdesk.rbac import ROLE_AGENTE, ROLE_CLIENTE, ROLE_JEFE_DE_MESA
 
 #FORMS USERS
 class custom_authentication_form(AuthenticationForm):
@@ -173,7 +173,14 @@ class create_ticket_form(forms.ModelForm):
         
 class opened_ticket_form(forms.ModelForm):
     closure_agent = forms.ModelChoiceField(
-        queryset=Profile.objects.filter(user__is_staff=True),
+        # 2.4: antes filtraba por user__is_staff=True (heuristica). Quien
+        # puede resolver tickets, segun la matriz RBAC vigente, es Agente o
+        # Jefe de Mesa (ambos tienen Helpdesk.change_ticket); el queryset
+        # del selector debe reflejar eso, no is_staff. El valor real sigue
+        # siendo forzado server-side al perfil de quien edita/resuelve
+        # (edit_ticket/solve_ticket en views.py, sin cambios ahi) - este
+        # queryset solo acota las opciones visibles/validas del formulario.
+        queryset=Profile.objects.filter(user__groups__name__in=[ROLE_AGENTE, ROLE_JEFE_DE_MESA]),
         widget=forms.Select(attrs={'class': 'selectpicker', 'data-live-search': 'true'})
     )
     class Meta: 

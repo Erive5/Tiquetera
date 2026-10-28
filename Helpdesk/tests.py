@@ -7,6 +7,7 @@ from django.core.management.base import CommandError
 from django.test import Client, TestCase
 from django.urls import reverse
 
+from Helpdesk.forms import opened_ticket_form
 from Helpdesk.models import Profile
 from Helpdesk.rbac import (
     BUSINESS_ROLE_GROUPS,
@@ -2255,6 +2256,146 @@ class EditSolveTicketAuthorizationTests(TestCase):
         self.client.force_login(sin_grupo_user)
         resp = self.client.post(reverse("solve_button", args=[ticket.id]))
         self.assertEqual(resp.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.4: closure_agent por grupo RBAC + consistencia de UI en
+# edit_ticket (campos deshabilitados en vez de solo revertidos server-side)
+# ---------------------------------------------------------------------------
+
+class ClosureAgentQuerysetAndEditTicketFieldRestrictionsTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _make_ticket(self, customer, **kwargs):
+        n = Ticket.objects.count()
+        return Ticket.objects.create(
+            issue="T",
+            priority=Priority.objects.create(priority_description=f"P-24-{n}"),
+            type=Type.objects.create(type_description=f"Tp-24-{n}"),
+            status=Status.objects.create(status_description=f"S-24-{n}"),
+            customer=customer,
+            observation="obs",
+            **kwargs,
+        )
+
+    def _cliente(self, suffix):
+        user = User.objects.create_user(username=f"cliente_24_{suffix}@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut=f"24c{suffix}-0", phone=f"24c{suffix}")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def _agente(self, suffix, area=None):
+        # is_staff ya no decide nada en el queryset de closure_agent (ese es
+        # el punto de este incremento): se deja is_staff=False a proposito
+        # para probar que de todas formas queda incluido por pertenecer al
+        # grupo Agente.
+        user = User.objects.create_user(username=f"agente_24_{suffix}@test.cl", password="x", is_staff=False)
+        profile = Profile.objects.create(user=user, rut=f"24a{suffix}-0", phone=f"24a{suffix}", area=area)
+        set_user_role_group(user, ROLE_AGENTE)
+        return user, profile
+
+    def _jefe(self, suffix):
+        # Mismo motivo: is_staff=False a proposito.
+        user = User.objects.create_user(username=f"jefe_24_{suffix}@test.cl", password="x", is_staff=False, is_superuser=False)
+        profile = Profile.objects.create(user=user, rut=f"24j{suffix}-0", phone=f"24j{suffix}")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    # ---- queryset de closure_agent (forms.py) ----
+
+    def test_closure_agent_queryset_incluye_agente_y_jefe_de_mesa(self):
+        _, agente_profile = self._agente("q1")
+        _, jefe_profile = self._jefe("q2")
+        queryset = opened_ticket_form().fields['closure_agent'].queryset
+        self.assertIn(agente_profile, queryset)
+        self.assertIn(jefe_profile, queryset)
+
+    def test_closure_agent_queryset_excluye_cliente(self):
+        _, cliente_profile = self._cliente("q3")
+        queryset = opened_ticket_form().fields['closure_agent'].queryset
+        self.assertNotIn(cliente_profile, queryset)
+
+    def test_closure_agent_queryset_no_depende_de_is_staff(self):
+        # Un Agente con is_staff=False (creado asi arriba a proposito) debe
+        # igual aparecer: el queryset se basa en el grupo RBAC, no en
+        # is_staff. Si alguien reintrodujera el filtro antiguo, este test
+        # fallaria porque el perfil quedaria fuera.
+        _, agente_profile = self._agente("q4")
+        queryset = opened_ticket_form().fields['closure_agent'].queryset
+        self.assertIn(agente_profile, queryset)
+
+    # ---- edit_ticket: campos deshabilitados en el formulario (GET) ----
+
+    def test_edit_ticket_agente_customer_y_area_deshabilitados(self):
+        area = Area.objects.create(area_description="Area-24-1")
+        agente_user, agente_profile = self._agente("f1", area=area)
+        _, cliente_profile = self._cliente("f2")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("edit_ticket", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+        create_form = resp.context['create_form']
+        self.assertTrue(create_form.fields['customer'].disabled)
+        self.assertTrue(create_form.fields['asigned_area'].disabled)
+
+    def test_edit_ticket_jefe_de_mesa_area_no_deshabilitada_customer_si(self):
+        jefe_user, _ = self._jefe("f3")
+        area = Area.objects.create(area_description="Area-24-2")
+        _, cliente_profile = self._cliente("f4")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("edit_ticket", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+        create_form = resp.context['create_form']
+        self.assertTrue(create_form.fields['customer'].disabled)
+        self.assertFalse(create_form.fields['asigned_area'].disabled)
+
+    def test_edit_ticket_closure_agent_deshabilitado_en_ticket_ya_resuelto(self):
+        jefe_user, jefe_profile = self._jefe("f5")
+        _, cliente_profile = self._cliente("f6")
+        ticket = self._make_ticket(
+            cliente_profile, solution="ya resuelto", closure_agent=jefe_profile,
+        )
+        ticket.closing_date = ticket.opening_date
+        ticket.save()
+
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("edit_ticket", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNotNone(resp.context['closed_form'])
+        self.assertTrue(resp.context['closed_form'].fields['closure_agent'].disabled)
+
+    # ---- edit_ticket: la reversion server-side sigue intacta en POST ----
+
+    def test_edit_ticket_reabrir_resuelto_closure_agent_se_fija_a_quien_edita(self):
+        area = Area.objects.create(area_description="Area-24-3")
+        agente_user, agente_profile = self._agente("f7", area=area)
+        otro_agente_user, otro_agente_profile = self._agente("f8", area=area)
+        _, cliente_profile = self._cliente("f9")
+        ticket = self._make_ticket(
+            cliente_profile, asigned_area=area,
+            solution="resuelto por otro", closure_agent=otro_agente_profile,
+        )
+        ticket.closing_date = ticket.opening_date
+        ticket.save()
+
+        self.client.force_login(agente_user)
+        resp = self.client.post(reverse("edit_ticket", args=[ticket.id]), {
+            "issue": ticket.issue, "priority": ticket.priority_id, "type": ticket.type_id,
+            "status": ticket.status_id, "customer": cliente_profile.id, "observation": ticket.observation,
+            "asigned_area": area.id,
+            "solution": "reabierto y vuelto a resolver",
+            "closure_agent": otro_agente_profile.id,  # intento de falsificacion via POST
+        })
+        self.assertEqual(resp.status_code, 302)
+        ticket.refresh_from_db()
+        # closure_agent queda en quien edito (agente_user), no en el valor
+        # enviado en el POST ni en el closure_agent original.
+        self.assertEqual(ticket.closure_agent_id, agente_profile.id)
+        self.assertNotEqual(ticket.closure_agent_id, otro_agente_profile.id)
 
 
 # ---------------------------------------------------------------------------

@@ -535,34 +535,60 @@ def edit_ticket(request, id):
         raise PermissionDenied
 
     # customer es inmutable durante la edicion para TODOS los roles, y
-    # asigned_area solo la puede reasignar el Jefe de Mesa. create_ticket_form
-    # sigue exponiendo ambos campos (sin cambios en forms.py, eso queda para
-    # el bloque dedicado); se revierte server-side lo que el POST intente
-    # cambiar en esos campos, en vez de modificar el formulario.
+    # asigned_area solo la puede reasignar el Jefe de Mesa. 2.4: ademas de
+    # revertir server-side lo que el POST intente cambiar en esos campos
+    # (eso NO se retira, es la proteccion real), los campos se deshabilitan
+    # en el propio formulario (`field.disabled = True`) para que la UI deje
+    # de mostrarlos como editables cuando no lo son - sin duplicar
+    # create_ticket_form ni tocar su definicion estatica (compartida con
+    # create_ticket), igual que el patron ya usado alli para Cliente. Un
+    # campo disabled en un ModelForm ignora el dato enviado y usa el valor
+    # inicial (el de la instancia) al validar, asi que esto es una capa
+    # adicional, no un reemplazo de la reversion server-side.
     original_customer_id = ticket.customer_id
     original_area_id = ticket.asigned_area_id
 
     can_resolve = ticket.solution and ticket.closure_agent and ticket.closing_date
 
-    if request.method == 'POST':
-        create_form = create_ticket_form(request.POST, instance=ticket)
-        closed_form = opened_ticket_form(request.POST, instance=ticket) if can_resolve else None
+    def build_create_form(data=None):
+        form = create_ticket_form(data, instance=ticket) if data is not None else create_ticket_form(instance=ticket)
+        # customer: visible, no editable, para todos los roles que llegan
+        # aqui (Cliente ya quedo excluido por el chequeo de permiso arriba).
+        form.fields['customer'].disabled = True
+        # asigned_area: editable solo para Jefe de Mesa; visible pero no
+        # editable para Agente (la bandeja compartida por area no cambia).
+        if not is_jefe_de_mesa:
+            form.fields['asigned_area'].disabled = True
+        return form
 
-        if create_form.is_valid() and (not can_resolve or closed_form.is_valid()):
+    def build_closed_form(data=None):
+        if not can_resolve:
+            return None
+        form = opened_ticket_form(data, instance=ticket) if data is not None else opened_ticket_form(instance=ticket)
+        # closure_agent nunca debe quedar seleccionable: se fuerza siempre
+        # a quien edita (ver mas abajo), igual que en solve_ticket.
+        form.fields['closure_agent'].disabled = True
+        return form
+
+    if request.method == 'POST':
+        create_form = build_create_form(request.POST)
+        closed_form = build_closed_form(request.POST)
+
+        if create_form.is_valid() and (closed_form is None or closed_form.is_valid()):
             ticket.customer_id = original_customer_id
             if not is_jefe_de_mesa:
                 ticket.asigned_area_id = original_area_id
             if can_resolve:
                 # closure_agent no debe poder falsificarse via POST (el
-                # campo del formulario permite elegir cualquier perfil
-                # staff): se fija a quien realmente esta editando.
+                # campo del formulario permite elegir cualquier agente o
+                # jefe de mesa): se fija a quien realmente esta editando.
                 ticket.closure_agent = get_object_or_404(Profile, user=request.user)
             create_form.save()
             ticket.save()  # Guardar el ticket actualizado
             return redirect('ticket_view', id=ticket.id)
     else:
-        create_form = create_ticket_form(instance=ticket)
-        closed_form = opened_ticket_form(instance=ticket) if can_resolve else None
+        create_form = build_create_form()
+        closed_form = build_closed_form()
 
     error = 'Hubo un problema al cargar el formulario'
     return render(request, 'tickets/edit_ticket.html', {'create_form': create_form, 'closed_form': closed_form, 'ticket': ticket, 'can_resolve': can_resolve, 'error': error})
