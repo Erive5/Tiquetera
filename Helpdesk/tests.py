@@ -2973,3 +2973,151 @@ class CustomerSignupValidationTests(TestCase):
         self.assertNotIn("pending_assisted_customer_id", client.session)
         # La sesion del Jefe de Mesa sigue intacta.
         self.assertEqual(int(client.session["_auth_user_id"]), jefe.id)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 3.2.3: manejo de perfiles incompletos (Cliente con User valido
+# pero sin Profile). No toca agent_signup, RUT/telefono ni la interfaz.
+# ---------------------------------------------------------------------------
+
+class CustomerWithoutProfileTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _cliente_sin_perfil(self, suffix):
+        user = User.objects.create_user(username=f"cliente_npf_{suffix}@test.cl", password="x")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user
+
+    def _jefe_de_mesa(self, suffix):
+        user = User.objects.create_user(username=f"jefe_npf_{suffix}@test.cl", password="x")
+        Profile.objects.create(user=user, rut=f"8{suffix}-0", phone=f"80{suffix}")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user
+
+    # --- Antes del fix, esto daba 500 (Profile.objects.get sin capturar) ---
+
+    def test_list_tickets_redirige_a_completar_perfil_sin_crashear(self):
+        cliente = self._cliente_sin_perfil("1")
+        self.client.force_login(cliente)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(
+            resp.url,
+            reverse("customer_complete_profile", args=[cliente.id]),
+        )
+
+    def test_create_ticket_redirige_a_completar_perfil_sin_crashear(self):
+        cliente = self._cliente_sin_perfil("2")
+        self.client.force_login(cliente)
+        resp = self.client.get(reverse("create_ticket"))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(
+            resp.url,
+            reverse("customer_complete_profile", args=[cliente.id]),
+        )
+
+    def test_ticket_view_redirige_a_completar_perfil_sin_crashear(self):
+        cliente = self._cliente_sin_perfil("3")
+        self.client.force_login(cliente)
+        # El id del ticket es irrelevante: un Cliente sin Profile no puede
+        # ser dueño de ningun ticket, exista o no el id pedido.
+        resp = self.client.get(reverse("ticket_view", args=[999999]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(
+            resp.url,
+            reverse("customer_complete_profile", args=[cliente.id]),
+        )
+
+    # --- La pantalla de completado sigue siendo accesible, sin bucles ---
+
+    def test_formulario_de_completar_perfil_es_accesible(self):
+        cliente = self._cliente_sin_perfil("4")
+        self.client.force_login(cliente)
+        resp = self.client.get(
+            reverse("customer_complete_profile", args=[cliente.id])
+        )
+        self.assertEqual(resp.status_code, 200)
+
+    def test_completar_perfil_y_luego_navegar_normalmente(self):
+        cliente = self._cliente_sin_perfil("5")
+        self.client.force_login(cliente)
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[cliente.id]),
+            {"rut": "55555555-5", "phone": "555555555"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Profile.objects.filter(user=cliente).exists())
+
+        # Ya con Profile, list_tickets/create_ticket/ticket_view funcionan
+        # con normalidad (ningun cambio de comportamiento para quien ya
+        # tiene el perfil completo).
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+
+        resp = self.client.get(reverse("create_ticket"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_cliente_con_perfil_completo_no_es_redirigido(self):
+        cliente = self._cliente_sin_perfil("6")
+        Profile.objects.create(user=cliente, rut="66666666-6", phone="666666666")
+        self.client.force_login(cliente)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+
+    # --- Sin bucle de redireccion ---
+
+    def test_no_hay_bucle_de_redireccion(self):
+        cliente = self._cliente_sin_perfil("7")
+        self.client.force_login(cliente)
+        resp = self.client.get(reverse("tickets"), follow=True)
+        # follow=True sigue la cadena de redirects; si hubiera un bucle,
+        # Django la corta con TooManyRedirects (excepcion) o redirect_chain
+        # terminaria en una URL que vuelve a redirigir. Aqui debe terminar,
+        # en una sola redireccion, en la pantalla de completar perfil (200).
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.redirect_chain), 1)
+        self.assertEqual(
+            resp.redirect_chain[0][0],
+            reverse("customer_complete_profile", args=[cliente.id]),
+        )
+
+    # --- Registro asistido por Jefe de Mesa sigue intacto ---
+
+    def test_registro_asistido_por_jefe_de_mesa_sigue_funcionando(self):
+        jefe = self._jefe_de_mesa("1")
+        self.client.force_login(jefe)
+
+        resp = self.client.post(reverse("customer_signup"), {
+            "username": "asistido_npf@test.cl", "password1": "Cu3nta$ecura99",
+            "password2": "Cu3nta$ecura99", "first_name": "A", "last_name": "B",
+        })
+        self.assertEqual(resp.status_code, 302)
+        nuevo = User.objects.get(username="asistido_npf@test.cl")
+
+        # El marcador de sesion sigue intacto (3.2.2) y la sesion sigue
+        # siendo la del Jefe de Mesa, no la del nuevo Cliente.
+        self.assertEqual(self.client.session.get("pending_assisted_customer_id"), nuevo.id)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), jefe.id)
+
+        # list_tickets del Jefe de Mesa (Administrador) nunca toca Profile
+        # del Cliente recien creado ni se ve afectado por que ese Cliente
+        # todavia no tenga perfil.
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[nuevo.id]),
+            {"rut": "77777777-7", "phone": "777777777"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Profile.objects.filter(user=nuevo).exists())
+
+    # --- Jefe de Mesa (Administrador) nunca necesita Profile en list_tickets ---
+
+    def test_jefe_de_mesa_ve_tickets_sin_que_su_propio_profile_importe(self):
+        jefe = self._jefe_de_mesa("2")
+        self.client.force_login(jefe)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)

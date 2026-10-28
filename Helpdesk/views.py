@@ -37,6 +37,27 @@ def signin(request):
            login(request, user)
            return redirect('tickets')
 
+def _customer_profile_redirect(request):
+    """3.2.3: un Cliente puede tener un User valido sin Profile todavia
+    (autorregistro abandonado antes de completar el perfil). Varias vistas
+    de tickets asumian que el Profile siempre existe (Profile.objects.get
+    sin try/except en list_tickets causaba un 500 real, confirmado en la
+    Fase 3.1 / hallazgo F2). En vez de repetir el chequeo en cada vista,
+    esta funcion centraliza la pregunta: "este Cliente ya puede operar, o
+    hay que mandarlo a terminar su registro primero?". Devuelve un
+    HttpResponseRedirect hacia customer_complete_profile (su propio id, el
+    mismo que usa el autorregistro publico) si aplica, o None si no aplica
+    (no es Cliente, o ya tiene Profile) - en ese caso la vista que llama
+    sigue su flujo normal sin ningun cambio de comportamiento.
+
+    No se usa para Agente/Jefe de Mesa: ese flujo (agent_signup/
+    agent_complete_profile) tiene su propio bug conocido y documentado por
+    separado (ver claude/rbac-progreso.md, "Riesgos abiertos"), fuera del
+    alcance de este incremento."""
+    if user_in_group(request.user, ROLE_CLIENTE) and not Profile.objects.filter(user=request.user).exists():
+        return redirect('customer_complete_profile', customer_id=request.user.id)
+    return None
+
 @login_required
 def get_user_type(request):
     # Migrado a clasificacion por grupo RBAC (Helpdesk.rbac.user_type_label).
@@ -406,6 +427,13 @@ def create_ticket(request):
     if not request.user.has_perm('Helpdesk.add_ticket'):
         raise PermissionDenied
 
+    # 3.2.3: un Cliente sin Profile todavia no puede crear tickets (no hay
+    # a que Profile asociarlos); se le redirige a terminar su registro en
+    # vez de que requester_profile mas abajo de un 404.
+    redirect_response = _customer_profile_redirect(request)
+    if redirect_response:
+        return redirect_response
+
     if user_in_group(request.user, ROLE_CLIENTE):
         is_cliente = True
     elif user_in_group(request.user, ROLE_AGENTE) or user_in_group(request.user, ROLE_JEFE_DE_MESA):
@@ -490,6 +518,14 @@ def ticket_view(request, id):
     # botones mostrar en la plantilla) -> cualquier autenticado podia leer
     # cualquier ticket ajeno por URL directa. Orden establecido: existencia
     # (404) -> permiso Helpdesk.view_ticket (403) -> alcance por rol (403).
+    # 3.2.3: un Cliente sin Profile todavia no puede ser dueño de ningun
+    # ticket; se le redirige a terminar su registro antes de evaluar si el
+    # ticket pedido existe o le pertenece (evita un 404 que confunde "no
+    # tienes este ticket" con "todavia no terminaste tu registro").
+    redirect_response = _customer_profile_redirect(request)
+    if redirect_response:
+        return redirect_response
+
     ticket = get_object_or_404(Ticket, id=id)
 
     if not request.user.has_perm('Helpdesk.view_ticket'):
@@ -682,8 +718,16 @@ def delete_ticket(request, id):
 
 @login_required
 def list_tickets(request):
+    # 3.2.3: redirige a un Cliente sin Profile a terminar su registro.
+    # Reemplaza el `profile = Profile.objects.get(user=request.user)`
+    # incondicional que habia antes (se ejecutaba incluso para
+    # Administrador, que nunca usa esa variable, y sin capturar
+    # DoesNotExist -> 500 real confirmado en la Fase 3.1 / F2).
+    redirect_response = _customer_profile_redirect(request)
+    if redirect_response:
+        return redirect_response
+
     user_type = get_user_type(request)
-    profile = Profile.objects.get(user=request.user)
     if user_type == "Administrador":
         tickets = Ticket.objects.all()
         tickets = apply_filters(request, tickets)
@@ -695,11 +739,17 @@ def list_tickets(request):
         # SIN el guard de area nula -> un Agente sin area veia (y list_tickets
         # le daba acceso a) todos los tickets con asigned_area=None. Se
         # reemplaza por el helper compartido, que ya incluye el guard.
+        profile = get_object_or_404(Profile, user=request.user)
         tickets = Ticket.objects.filter(agent_ticket_scope_q(profile)).distinct()
         tickets = apply_filters(request, tickets)
         data = get_ticket_data(tickets, request)
         return render(request, 'helpdesk_head/list_tickets_head.html', data)
     else:
+        # Cliente: ya se confirmo arriba que tiene Profile (si no, ya se
+        # redirigio), asi que este get_object_or_404 nunca deberia dar 404
+        # en la practica - se mantiene por simetria/defensa en profundidad
+        # con el resto del archivo, no por necesidad real.
+        profile = get_object_or_404(Profile, user=request.user)
         tickets = Ticket.objects.filter(customer = profile)
         tickets = apply_filters(request, tickets)
         data = get_ticket_data(tickets, request)
