@@ -15,6 +15,7 @@ from Helpdesk.rbac import (
     ROLE_AGENTE, ROLE_CLIENTE, ROLE_JEFE_DE_MESA, UnknownUserRoleError,
     set_user_role_group, user_in_group, user_type_label,
 )
+from Helpdesk.ticket_scope import agent_can_view_customer, agent_ticket_scope_q
 
 # USUARIOS
 def home(request):
@@ -195,22 +196,6 @@ def customer_complete_profile(request, customer_id=None):
 # (p.ej. un Jefe de Mesa con is_staff=False no debe contarse como cliente).
 # set_user_role_group() garantiza que un usuario pertenece a lo sumo a uno
 # de los 3 grupos RBAC, asi que esta clasificacion es confiable y unica.
-def _agent_ticket_scope_q(agent_profile):
-    """Mismo criterio de alcance que list_tickets para un Agente. Profile.area
-    es nullable (igual que Ticket.asigned_area): si el agente no tiene area
-    asignada, Q(asigned_area=None) matchearia tickets SIN area asignada y le
-    daria acceso indebido. Por eso esa rama del OR solo se agrega cuando el
-    agente realmente tiene area."""
-    scope = Q(opening_agent=agent_profile) | Q(closure_agent=agent_profile)
-    if agent_profile.area_id is not None:
-        scope = scope | Q(asigned_area=agent_profile.area_id)
-    return scope
-
-def _agent_can_view_customer(agent_profile, customer_profile):
-    return Ticket.objects.filter(customer=customer_profile).filter(
-        _agent_ticket_scope_q(agent_profile)
-    ).exists()
-
 @login_required
 def list_customers(request):
     if not request.user.has_perm('Helpdesk.view_profile'):
@@ -225,7 +210,7 @@ def list_customers(request):
             raise PermissionDenied
         requester_profile = get_object_or_404(Profile, user=request.user)
         scoped_ids = Ticket.objects.filter(
-            _agent_ticket_scope_q(requester_profile)
+            agent_ticket_scope_q(requester_profile)
         ).values_list('customer_id', flat=True).distinct()
         customers = customers.filter(id__in=scoped_ids)
 
@@ -258,7 +243,7 @@ def customer_view(request, id):
         raise PermissionDenied
 
     requester_profile = get_object_or_404(Profile, user=request.user)
-    if not _agent_can_view_customer(requester_profile, customer):
+    if not agent_can_view_customer(requester_profile, customer):
         raise PermissionDenied
     return render(request, 'customer/customer_view.html', {'customer': customer})
 
@@ -447,9 +432,11 @@ def list_tickets(request):
         return render(request, 'helpdesk_head/list_tickets_head.html', data)
 
     elif user_type == "Agente":
-        agent_area = profile.area
-        tickets = Ticket.objects.filter(
-        Q(asigned_area=agent_area) | Q(opening_agent=profile) | Q(closure_agent=profile)).distinct()
+        # Antes: Q(asigned_area=agent_area) duplicaba el criterio de alcance
+        # SIN el guard de area nula -> un Agente sin area veia (y list_tickets
+        # le daba acceso a) todos los tickets con asigned_area=None. Se
+        # reemplaza por el helper compartido, que ya incluye el guard.
+        tickets = Ticket.objects.filter(agent_ticket_scope_q(profile)).distinct()
         tickets = apply_filters(request, tickets)
         data = get_ticket_data(tickets, request)
         return render(request, 'helpdesk_head/list_tickets_head.html', data)

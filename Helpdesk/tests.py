@@ -1641,3 +1641,131 @@ class ProfileViewLabelAndLinksTests(TestCase):
         self.client.force_login(user)
         resp = self.client.get(reverse("modify_user_data", args=[profile.id]))
         self.assertEqual(resp.status_code, 200)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.2C.1: centralizacion del alcance de tickets (Helpdesk.ticket_scope)
+# y correccion del bug de area nula en list_tickets.
+# ---------------------------------------------------------------------------
+
+class ListTicketsScopeTests(TestCase):
+    """Cubre el bug corregido: un Agente sin area asignada no debe ver
+    tickets sin area asignada, y un Agente con area no debe ver tickets de
+    OTRA area en los que no participa como agente de apertura/cierre."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _make_ticket(self, customer, **kwargs):
+        n = Ticket.objects.count()
+        return Ticket.objects.create(
+            issue="T",
+            priority=Priority.objects.create(priority_description=f"P-{n}"),
+            type=Type.objects.create(type_description=f"Tp-{n}"),
+            status=Status.objects.create(status_description=f"S-{n}"),
+            customer=customer,
+            observation="obs",
+            **kwargs,
+        )
+
+    def test_agente_sin_area_no_ve_ticket_sin_area_asignada(self):
+        # Regresion del bug: antes, Q(asigned_area=agent_area) con
+        # agent_area=None le daba acceso indebido a estos tickets.
+        agente_user = User.objects.create_user(username="agente_sa@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=agente_user, rut="90-0", phone="900")  # sin area
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_sa@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="91-1", phone="911")
+        self._make_ticket(cliente_profile)  # asigned_area=None, sin relacion con el agente
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.context["tickets"]), 0)
+
+    def test_agente_con_area_ve_ticket_de_su_area(self):
+        area = Area.objects.create(area_description="Area-CA")
+        agente_user = User.objects.create_user(username="agente_ca@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=agente_user, rut="92-2", phone="922", area=area)
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_ca@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="93-3", phone="933")
+        ticket = self._make_ticket(cliente_profile, asigned_area=area)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(list(resp.context["tickets"]), [ticket])
+
+    def test_agente_con_area_no_ve_ticket_de_otra_area_sin_participar(self):
+        # Caso explicitamente pedido: el agente tiene area propia, pero el
+        # ticket es de OTRA area y el agente no abrio ni cerro ese ticket.
+        area_propia = Area.objects.create(area_description="Area-propia")
+        area_ajena = Area.objects.create(area_description="Area-ajena")
+        agente_user = User.objects.create_user(username="agente_oa2@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=agente_user, rut="94-4", phone="944", area=area_propia)
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_oa2@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="95-5", phone="955")
+        self._make_ticket(cliente_profile, asigned_area=area_ajena)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(len(resp.context["tickets"]), 0)
+
+    def test_agente_ve_ticket_propio_por_opening_agent_sin_depender_de_area(self):
+        agente_user = User.objects.create_user(username="agente_oa@test.cl", password="x", is_staff=True)
+        agente_profile = Profile.objects.create(user=agente_user, rut="96-6", phone="966")  # sin area
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_oa@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="97-7", phone="977")
+        ticket = self._make_ticket(cliente_profile, opening_agent=agente_profile)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(list(resp.context["tickets"]), [ticket])
+
+    def test_agente_ve_ticket_propio_por_closure_agent_sin_depender_de_area(self):
+        agente_user = User.objects.create_user(username="agente_ca2@test.cl", password="x", is_staff=True)
+        agente_profile = Profile.objects.create(user=agente_user, rut="98-8", phone="988")  # sin area
+        set_user_role_group(agente_user, ROLE_AGENTE)
+
+        cliente_user = User.objects.create_user(username="cliente_ca2@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="99-9", phone="999")
+        ticket = self._make_ticket(cliente_profile, closure_agent=agente_profile)
+
+        self.client.force_login(agente_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(list(resp.context["tickets"]), [ticket])
+
+    def test_jefe_de_mesa_ve_todos_los_tickets_sin_alcance(self):
+        jefe_user = User.objects.create_user(username="jefe_lts@test.cl", password="x", is_superuser=False)
+        Profile.objects.create(user=jefe_user, rut="100-0", phone="1000")
+        set_user_role_group(jefe_user, ROLE_JEFE_DE_MESA)
+
+        cliente_user = User.objects.create_user(username="cliente_lts@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="101-1", phone="1011")
+        self._make_ticket(cliente_profile)
+
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(len(resp.context["tickets"]), 1)
+
+    def test_cliente_ve_solo_sus_propios_tickets(self):
+        cliente_user = User.objects.create_user(username="cliente_solo@test.cl", password="x")
+        cliente_profile = Profile.objects.create(user=cliente_user, rut="102-2", phone="1022")
+        set_user_role_group(cliente_user, ROLE_CLIENTE)
+        propio = self._make_ticket(cliente_profile)
+
+        otro_user = User.objects.create_user(username="otro_cliente@test.cl", password="x")
+        otro_profile = Profile.objects.create(user=otro_user, rut="103-3", phone="1033")
+        set_user_role_group(otro_user, ROLE_CLIENTE)
+        self._make_ticket(otro_profile)
+
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(list(resp.context["tickets"]), [propio])
