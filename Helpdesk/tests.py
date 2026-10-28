@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import Group, Permission, User
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.urls import reverse
 
 from Helpdesk.models import Profile
@@ -30,7 +30,7 @@ EXPECTED_GROUP_PERMISSIONS = {
     "Cliente": {"Helpdesk.add_ticket", "Helpdesk.view_ticket"},
     "Agente": {
         "Helpdesk.add_ticket", "Helpdesk.view_ticket", "Helpdesk.change_ticket",
-        "Helpdesk.view_profile",
+        "Helpdesk.view_profile", "Helpdesk.add_profile",
     },
     "Jefe de Mesa": {
         "Helpdesk.add_ticket", "Helpdesk.view_ticket", "Helpdesk.change_ticket",
@@ -38,7 +38,7 @@ EXPECTED_GROUP_PERMISSIONS = {
         "Helpdesk.add_type", "Helpdesk.change_type", "Helpdesk.delete_type", "Helpdesk.view_type",
         "Helpdesk.add_status", "Helpdesk.change_status", "Helpdesk.delete_status", "Helpdesk.view_status",
         "Helpdesk.add_area", "Helpdesk.change_area", "Helpdesk.delete_area", "Helpdesk.view_area",
-        "Helpdesk.register_agent", "Helpdesk.manage_user_status", "Helpdesk.view_profile",
+        "Helpdesk.register_agent", "Helpdesk.manage_user_status", "Helpdesk.view_profile", "Helpdesk.add_profile",
     },
 }
 
@@ -258,13 +258,27 @@ class DemoUserGroupAssignmentTests(TestCase):
         self.assertEqual(User.objects.get(username="agente@ventas.cl").groups.get().name, ROLE_AGENTE)
         self.assertEqual(User.objects.get(username="alambrito@cliente.cl").groups.get().name, ROLE_CLIENTE)
 
-    def test_demo_superuser_flag_unchanged(self):
-        # Ajuste explicito: todavia NO tocamos is_superuser del Jefe de
-        # Mesa demo en este incremento.
-        self.assertTrue(User.objects.get(username="jefemesa@admin.cl").is_superuser)
+    def test_demo_jefe_de_mesa_sin_superuser_ni_staff(self):
+        # 2.2D: nuevas instalaciones crean la cuenta demo del Jefe de Mesa
+        # SIN is_superuser ni is_staff (antes, hasta 2.2C, se creaba con
+        # ambos en True; este test reemplaza a
+        # test_demo_superuser_flag_unchanged, que verificaba lo contrario
+        # a proposito porque ese incremento aun no se habia hecho).
+        demo = User.objects.get(username="jefemesa@admin.cl")
+        self.assertFalse(demo.is_superuser)
+        self.assertFalse(demo.is_staff)
 
 
 class SignupViewGroupAssignmentTests(TestCase):
+    def setUp(self):
+        # 2.2D: test_agent_signup_assigns_agente_group usa al Jefe de Mesa
+        # demo para pasar el permission_required('Helpdesk.register_agent')
+        # de agent_signup. Antes funcionaba por el bypass de is_superuser
+        # (sin importar si el grupo tenia permisos reales); ahora que la
+        # demo ya no es superusuario, su grupo necesita los permisos reales
+        # sincronizados, igual que en el resto de los tests de este archivo.
+        call_command("seed_roles")
+
     def test_customer_signup_assigns_cliente_group(self):
         self.client.post(reverse("customer_signup"), {
             "username": "nuevo_cliente@test.cl", "password1": "x",
@@ -275,8 +289,9 @@ class SignupViewGroupAssignmentTests(TestCase):
 
     def test_agent_signup_assigns_agente_group(self):
         # El Bloque 2 de 2.2A exige el permiso 'register_agent' para esta vista;
-        # se usa el Jefe de Mesa demo (superusuario) en lugar de un usuario
-        # arbitrario sin grupo/permiso, que ahora recibiria 403.
+        # se usa el Jefe de Mesa demo (tiene ese permiso via su grupo RBAC,
+        # no por ser superusuario -- desde 2.2D ya no lo es) en lugar de un
+        # usuario arbitrario sin grupo/permiso, que ahora recibiria 403.
         caller = User.objects.get(username="jefemesa@admin.cl")
         self.client.force_login(caller)
         self.client.post(reverse("agent_signup"), {
@@ -1455,8 +1470,12 @@ class GetUserTypeMigrationTests(TestCase):
         set_user_role_group(user, ROLE_JEFE_DE_MESA)
         self.assertEqual(user_type_label(user), "Administrador")
 
-    def test_jefe_de_mesa_demo_superuser_returns_administrador(self):
+    def test_jefe_de_mesa_demo_non_superuser_returns_administrador(self):
+        # 2.2D: la cuenta demo ya no es superusuario; esta prueba confirma
+        # que su clasificacion sigue siendo correcta (por grupo RBAC, no
+        # por el flag, que de todas formas ya no tiene).
         demo = User.objects.get(username="jefemesa@admin.cl")
+        self.assertFalse(demo.is_superuser)
         self.assertEqual(user_type_label(demo), "Administrador")
 
     def test_user_without_rbac_group_and_is_staff_true_raises_no_fallback(self):
@@ -1556,8 +1575,12 @@ class NavigationVisibilityTests(TestCase):
         self.assertContains(resp, reverse("agents"))
         self.assertContains(resp, reverse("customers"))
 
-    def test_jefe_de_mesa_demo_superuser_sees_same_links(self):
+    def test_jefe_de_mesa_demo_non_superuser_sees_same_links(self):
+        # 2.2D: la cuenta demo ya no es superusuario; el nav ya dependia de
+        # perms/user_type desde 2.2B, no de is_superuser, asi que no deberia
+        # cambiar nada.
         demo = User.objects.get(username="jefemesa@admin.cl")
+        self.assertFalse(demo.is_superuser)
         self.client.force_login(demo)
         resp = self.client.get(reverse("home"))
         self.assertContains(resp, "Atributos Tickets")
@@ -1932,8 +1955,12 @@ class TicketViewAuthorizationTests(TestCase):
         resp = self.client.get(reverse("ticket_view", args=[ticket.id]))
         self.assertEqual(resp.status_code, 200)
 
-    def test_jefe_de_mesa_demo_superuser_ve_cualquier_ticket(self):
+    def test_jefe_de_mesa_demo_non_superuser_ve_cualquier_ticket(self):
+        # 2.2D: la cuenta demo ya no es superusuario; el acceso total a
+        # cualquier ticket viene de su pertenencia al grupo Jefe de Mesa
+        # (2.2C.2), no de is_superuser.
         demo = User.objects.get(username="jefemesa@admin.cl")
+        self.assertFalse(demo.is_superuser)
         cliente_user = User.objects.create_user(username="cliente_tv_demo@test.cl", password="x")
         cliente_profile = Profile.objects.create(user=cliente_user, rut="219-9", phone="2199")
         ticket = self._make_ticket(cliente_profile)
@@ -2432,3 +2459,211 @@ class CreateTicketAuthorizationTests(TestCase):
         self.assertIn("status", resp.context["form"].fields)
         self.assertIn("customer", resp.context["form"].fields)
         self.assertIn("asigned_area", resp.context["form"].fields)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 2.3: seguridad de customer_complete_profile
+# ---------------------------------------------------------------------------
+
+class CustomerCompleteProfileAuthorizationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _agente(self, suffix):
+        user = User.objects.create_user(username=f"agente_ccp_{suffix}@test.cl", password="x", is_staff=True)
+        Profile.objects.create(user=user, rut=f"6{suffix}-0", phone=f"60{suffix}")
+        set_user_role_group(user, ROLE_AGENTE)
+        return user
+
+    def _jefe(self, suffix):
+        user = User.objects.create_user(username=f"jefe_ccp_{suffix}@test.cl", password="x", is_staff=True, is_superuser=False)
+        Profile.objects.create(user=user, rut=f"7{suffix}-0", phone=f"70{suffix}")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user
+
+    def _cliente_sin_perfil(self, suffix):
+        # Cliente creado directamente por ORM, SIN pasar por customer_signup:
+        # simula un cliente pendiente que nadie registro en la sesion actual.
+        user = User.objects.create_user(username=f"cliente_ccp_{suffix}@test.cl", password="x")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user
+
+    def _registrar_cliente_asistido(self, client, suffix):
+        # Usa el flujo real (POST a customer_signup) para que el marcador
+        # de sesion se fije exactamente como lo haria un Agente/Jefe de
+        # Mesa real registrando a un cliente por el.
+        resp = client.post(reverse("customer_signup"), {
+            "username": f"nuevo_ccp_{suffix}@test.cl", "password1": "x",
+            "first_name": "A", "last_name": "B",
+        })
+        self.assertEqual(resp.status_code, 302)
+        return User.objects.get(username=f"nuevo_ccp_{suffix}@test.cl")
+
+    # --- Cliente completando su propio perfil ---
+
+    def test_cliente_completa_su_propio_perfil(self):
+        cliente = self._cliente_sin_perfil("1")
+        self.client.force_login(cliente)
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[cliente.id]),
+            {"rut": "11111111-1", "phone": "111111111"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        profile = Profile.objects.get(user=cliente)
+        self.assertEqual(profile.rut, "11111111-1")
+
+    def test_cliente_no_puede_completar_perfil_de_otro_cambiando_id(self):
+        cliente = self._cliente_sin_perfil("2")
+        otro_cliente = self._cliente_sin_perfil("2b")
+        self.client.force_login(cliente)
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[otro_cliente.id]),
+            {"rut": "22222222-2", "phone": "222222222"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(Profile.objects.filter(user=otro_cliente).exists())
+
+    # --- Registro asistido (Agente/Jefe de Mesa) ---
+
+    def test_agente_completa_el_cliente_que_acaba_de_registrar(self):
+        agente = self._agente("3")
+        self.client.force_login(agente)
+        nuevo_cliente = self._registrar_cliente_asistido(self.client, "3")
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[nuevo_cliente.id]),
+            {"rut": "33333333-3", "phone": "333333333"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        profile = Profile.objects.get(user=nuevo_cliente)
+        self.assertEqual(profile.rut, "33333333-3")
+
+    def test_jefe_de_mesa_non_superuser_registro_asistido(self):
+        jefe = self._jefe("4")
+        self.client.force_login(jefe)
+        nuevo_cliente = self._registrar_cliente_asistido(self.client, "4")
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[nuevo_cliente.id]),
+            {"rut": "44444444-4", "phone": "444444444"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Profile.objects.filter(user=nuevo_cliente).exists())
+
+    def test_agente_no_puede_completar_otro_cliente_pendiente_que_no_registro(self):
+        # cliente_pendiente existe, es Cliente, no tiene Profile - pero
+        # ningun agente lo registro en la sesion que va a intentar esto.
+        cliente_pendiente = self._cliente_sin_perfil("5")
+
+        otro_agente = self._agente("5b")
+        otro_client = Client()
+        otro_client.force_login(otro_agente)
+        # otro_agente SI registro a alguien, pero no a cliente_pendiente.
+        self._registrar_cliente_asistido(otro_client, "5b")
+
+        resp = otro_client.post(
+            reverse("customer_complete_profile", args=[cliente_pendiente.id]),
+            {"rut": "55555555-5", "phone": "555555555"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(Profile.objects.filter(user=cliente_pendiente).exists())
+
+    def test_agente_sin_permiso_add_profile_403_sin_mutacion(self):
+        agente = self._agente("6")
+        group = Group.objects.get(name=ROLE_AGENTE)
+        group.permissions.remove(Permission.objects.get(codename="add_profile"))
+        self.client.force_login(agente)
+        nuevo_cliente = self._registrar_cliente_asistido(self.client, "6")
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[nuevo_cliente.id]),
+            {"rut": "66666666-6", "phone": "666666666"},
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(Profile.objects.filter(user=nuevo_cliente).exists())
+
+    def test_agente_no_puede_apuntar_a_usuario_que_no_es_cliente(self):
+        agente = self._agente("7")
+        otro_agente = self._agente("7b")
+        self.client.force_login(agente)
+        # Fuerza el marcador de sesion al id de otro_agente, simulando un
+        # intento directo de IDOR (en la practica nunca se generaria asi,
+        # pero confirma que el chequeo de grupo del objetivo es real).
+        session = self.client.session
+        session["pending_assisted_customer_id"] = otro_agente.id
+        session.save()
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[otro_agente.id]),
+            {"rut": "77777777-7", "phone": "777777777"},
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    # --- Perfiles ya completados ---
+
+    def test_perfil_ya_completado_redirige_sin_sobrescribir(self):
+        agente = self._agente("8")
+        self.client.force_login(agente)
+        nuevo_cliente = self._registrar_cliente_asistido(self.client, "8")
+        Profile.objects.create(user=nuevo_cliente, rut="existente", phone="000000000")
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[nuevo_cliente.id]),
+            {"rut": "88888888-8", "phone": "888888888"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        profile = Profile.objects.get(user=nuevo_cliente)
+        self.assertEqual(profile.rut, "existente")  # no se sobreescribio
+
+    # --- Acceso anonimo y sin grupo ---
+
+    def test_anonimo_redirige_a_login(self):
+        cliente = self._cliente_sin_perfil("9")
+        resp = self.client.get(reverse("customer_complete_profile", args=[cliente.id]))
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(resp.url.startswith("/signin"))
+
+    def test_usuario_sin_grupo_rbac_403(self):
+        sin_grupo = User.objects.create_user(username="sin_grupo_ccp@test.cl", password="x", is_staff=True)
+        cliente = self._cliente_sin_perfil("10")
+        self.client.force_login(sin_grupo)
+        resp = self.client.get(reverse("customer_complete_profile", args=[cliente.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    # --- Validacion de formulario y metodo HTTP ---
+
+    def test_post_invalido_no_crea_perfil(self):
+        cliente = self._cliente_sin_perfil("11")
+        self.client.force_login(cliente)
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[cliente.id]),
+            {"rut": "", "phone": ""},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Profile.objects.filter(user=cliente).exists())
+
+    def test_metodo_no_permitido_devuelve_405(self):
+        cliente = self._cliente_sin_perfil("12")
+        self.client.force_login(cliente)
+        resp = self.client.put(reverse("customer_complete_profile", args=[cliente.id]))
+        self.assertEqual(resp.status_code, 405)
+
+    # --- El autorregistro publico sigue funcionando ---
+
+    def test_autorregistro_publico_sigue_funcionando(self):
+        resp = self.client.post(reverse("customer_signup"), {
+            "username": "publico_ccp@test.cl", "password1": "x",
+            "first_name": "A", "last_name": "B",
+        })
+        self.assertEqual(resp.status_code, 302)
+        nuevo = User.objects.get(username="publico_ccp@test.cl")
+
+        resp = self.client.get(reverse("customer_complete_profile", args=[nuevo.id]))
+        self.assertEqual(resp.status_code, 200)
+
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[nuevo.id]),
+            {"rut": "99999999-9", "phone": "999999999"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Profile.objects.filter(user=nuevo).exists())

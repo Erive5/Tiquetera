@@ -5,7 +5,7 @@ from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required, permission_required
 from django.utils import timezone
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseNotAllowed, Http404
@@ -144,51 +144,87 @@ def customer_signup(request):
             print("usuario valido")
             login(request, new_user)
             return redirect('customer_complete_profile', customer_id = new_user.id)
+        # 2.3: registro asistido (un Agente/Jefe de Mesa, ya autenticado,
+        # registra a un cliente por el). El marcador que autoriza a
+        # completar ESE perfil se fija aqui, en la sesion de quien esta
+        # haciendo el registro, solo DESPUES de haber creado efectivamente
+        # a new_user - nunca se acepta un id de cliente propuesto por el
+        # navegador (ver customer_complete_profile).
+        request.session['pending_assisted_customer_id'] = new_user.id
         return redirect('customer_complete_profile', customer_id=new_user.id)
     except Exception as e:
         err= e
         return render(request, 'customer/customer_signup.html', {'form': customer_creation_form,
                                                                 'error': err})
 
+@login_required
+@require_http_methods(["GET", "POST"])
 def customer_complete_profile(request, customer_id=None):
-    user = request.user
-    print(user)
-    if user.is_staff:  # Si es un agente
-        # Si es un agente, obtenemos los datos del cliente desde la URL
-        customer = get_object_or_404(User, id=customer_id)
-        user_data = {
-            'username': customer.username,
-            'first_name': customer.first_name,
-            'last_name': customer.last_name,
-        }
-    else:  # Si no es un agente, usamos los datos del usuario autenticado
-        user_data = {
-            'username': request.user.username,
-            'first_name': request.user.first_name,
-            'last_name': request.user.last_name,
-        }
+    # 2.3: autorizacion real. Antes, `if user.is_staff:` aceptaba
+    # CUALQUIER User existente como customer_id (IDOR: un Agente podia
+    # completar - o corromper, creandole un Profile sin area - el perfil
+    # de cualquier usuario, cliente o no, con solo cambiar el id en la
+    # URL). Ahora: un Cliente solo puede completar el suyo; un Agente/Jefe
+    # de Mesa solo puede completar el de un Cliente que EL MISMO acaba de
+    # registrar en su propia sesion (marcador fijado por el servidor en
+    # customer_signup, nunca por el navegador) - no alcanza con que el
+    # objetivo sea un Cliente sin perfil todavia, eso no demuestra que
+    # este agente lo haya registrado.
+    if user_in_group(request.user, ROLE_CLIENTE):
+        if customer_id != request.user.id:
+            raise PermissionDenied
+        target_user = request.user
+    elif user_in_group(request.user, ROLE_AGENTE) or user_in_group(request.user, ROLE_JEFE_DE_MESA):
+        if not request.user.has_perm('Helpdesk.add_profile'):
+            raise PermissionDenied
+        if request.session.get('pending_assisted_customer_id') != customer_id:
+            raise PermissionDenied
+        target_user = get_object_or_404(User, id=customer_id)
+        if not user_in_group(target_user, ROLE_CLIENTE):
+            # Mismo criterio que customer_view/agent_view (Bloque 3): un
+            # usuario que no sea del tipo correcto no existe para esta vista.
+            raise Http404
+    else:
+        raise PermissionDenied
+
+    if Profile.objects.filter(user=target_user).exists():
+        # Ya completo - nada que hacer. No es un intento de acceso
+        # indebido, es un flujo ya terminado (Profile.user es OneToOne: un
+        # segundo INSERT violaria la constraint, por eso no se intenta).
+        return redirect('tickets')
+
+    user_data = {
+        'username': target_user.username,
+        'first_name': target_user.first_name,
+        'last_name': target_user.last_name,
+    }
 
     if request.method == 'GET':
-        return render(request, 'customer/customer_complete_profile.html', {'form': customer_profile_form, 'user_data': user_data})
-    else:
-        try:
-            form = customer_profile_form(request.POST)
-            new_profile = form.save(commit=False)
-            if request.user.is_staff:
-                # Si es un agente, asignamos el cliente en el perfil que está creando
-                new_profile.user = customer
-            else:
-                # Si es el cliente mismo, asignamos el perfil al usuario autenticado
-                new_profile.user = request.user
-            new_profile.save()
-            return redirect('tickets')  # Redirige al cliente al panel de tickets
+        return render(request, 'customer/customer_complete_profile.html', {
+            'form': customer_profile_form(),
+            'user_data': user_data,
+        })
 
-        except ValueError:
-            return render(request, 'customer/customer_complete_profile.html', {
-                'form': customer_profile_form,
-                'user_data': user_data,
-                'error': 'Por favor, ingresa datos válidos.'
-            })
+    form = customer_profile_form(request.POST)
+    if form.is_valid():
+        try:
+            with transaction.atomic():
+                new_profile = form.save(commit=False)
+                new_profile.user = target_user
+                new_profile.save()
+        except IntegrityError:
+            # Carrera infrecuente: alguien mas completo este mismo perfil
+            # entre el chequeo de arriba y este guardado. No es un error
+            # del usuario actual, no hay nada mas que hacer.
+            return redirect('tickets')
+        request.session.pop('pending_assisted_customer_id', None)
+        return redirect('tickets')  # Redirige al cliente al panel de tickets
+
+    return render(request, 'customer/customer_complete_profile.html', {
+        'form': form,
+        'user_data': user_data,
+        'error': 'Por favor, ingresa datos válidos.',
+    })
 
 # Clasificacion por pertenencia a grupo RBAC (Cliente/Agente/Jefe de Mesa),
 # NO por is_staff/is_superuser. get_user_type() todavia usa esos flags y no

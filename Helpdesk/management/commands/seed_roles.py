@@ -37,7 +37,15 @@ GROUP_PERMISSIONS = {
     },
     "Agente": {
         Ticket: ["add_ticket", "view_ticket", "change_ticket"],
-        Profile: ["view_profile"],
+        # 2.3: add_profile permite completar el perfil de un Cliente que
+        # el propio Agente acaba de registrar via el flujo asistido
+        # (customer_signup -> customer_complete_profile). La autorizacion
+        # real de A QUIEN puede completarsele el perfil no depende solo de
+        # este permiso, sino de un marcador en la sesion que el servidor
+        # fija exclusivamente al crear ese Cliente (ver customer_signup /
+        # customer_complete_profile en views.py) - este permiso solo cubre
+        # "puede hacer esta accion en general", no "sobre cual Cliente".
+        Profile: ["view_profile", "add_profile"],
     },
     "Jefe de Mesa": {
         Ticket: ["add_ticket", "view_ticket", "change_ticket"],
@@ -45,7 +53,7 @@ GROUP_PERMISSIONS = {
         Type: ["add_type", "change_type", "delete_type", "view_type"],
         Status: ["add_status", "change_status", "delete_status", "view_status"],
         Area: ["add_area", "change_area", "delete_area", "view_area"],
-        Profile: ["register_agent", "manage_user_status", "view_profile"],
+        Profile: ["register_agent", "manage_user_status", "view_profile", "add_profile"],
     },
 }
 
