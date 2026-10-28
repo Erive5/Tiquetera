@@ -11,7 +11,7 @@
     {% if agents %}
     <form method="GET">
     <div class="filters_container">
-      <p>Usted puede filtrar por ingreso de rut, nombre ó apellido del agente que desea buscar</p> 
+      <p>Usted puede filtrar por ingreso de nombre ó apellido del agente que desea buscar</p>
       <p>Usted puede filtrar por estado (activos e inactivos) y por fecha de registro del agente</p> 
       <div class="select_container">
 
@@ -30,7 +30,6 @@
       </div> <!-- select container end-->
 
       <div class="input_container">
-          <input type="text" name="rut" placeholder="RUT">
           <input type="text" name="first_name" placeholder="Nombre">
           <input type="text" name="last_name" placeholder="Apellido">
           <input type="date" name="join_date" placeholder="Fecha de registro">
@@ -46,7 +45,6 @@
             <th>Detalles</th>
             <th>Nombre</th>
             <th>Apellido</th>
-            <th>RUT</th>
             <th>Área</th>
             <th>Estado</th>
             <th>Fecha registro</th>
@@ -60,7 +58,6 @@
             </td>
             <td>{{ agent.user.first_name }}</td>
             <td>{{ agent.user.last_name }}</td>
-            <td>{{ agent.rut }}</td>
             <td>{{ agent.area }}</td>
             <td> 
               {% if agent.user.is_active %}

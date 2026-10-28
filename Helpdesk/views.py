@@ -846,7 +846,6 @@ def apply_opening_agent_filter(request, tickets):
     opening_agent_query = request.GET.get('opening_agent')
     if opening_agent_query:
         tickets = tickets.filter(Q(opening_agent__id__icontains=opening_agent_query) |
-                                 Q(opening_agent__rut__icontains=opening_agent_query) |
                                  Q(opening_agent__user__first_name__icontains=opening_agent_query) |
                                  Q(opening_agent__user__last_name__icontains=opening_agent_query))
     return tickets
@@ -855,7 +854,6 @@ def apply_closure_agent_filter(request, tickets):
     closure_agent_query = request.GET.get('closure_agent')
     if closure_agent_query:
         tickets = tickets.filter(
-                                 Q(closure_agent__rut__icontains=closure_agent_query) |
                                  Q(closure_agent__user__first_name__icontains=closure_agent_query) |
                                  Q(closure_agent__user__last_name__icontains=closure_agent_query)
                                  )
@@ -887,7 +885,6 @@ def apply_dropdown_filters(request, tickets):
 #FILTROS Agente
 def apply_agent_filters(request, agents):
     # Obtener los valores de los parámetros de la solicitud GET
-    rut_query = request.GET.get('rut')
     name_query = request.GET.get('first_name')
     last_name_query = request.GET.get('last_name')
     join_date_query = request.GET.get('join_date')
@@ -895,8 +892,6 @@ def apply_agent_filters(request, agents):
     area_query = request.GET.get('area')
 
     # Aplicar los filtros acumulativamente
-    if rut_query:
-        agents = agents.filter(rut__icontains=rut_query)
     if name_query:
         agents = agents.filter(user__first_name__icontains=name_query)
     if last_name_query:

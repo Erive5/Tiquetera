@@ -11,7 +11,7 @@
     {% if customers %}
     <form method="GET">
     <div class="filters_container">
-      <p>Usted puede filtrar por ingreso de rut, nombre ó apellido del cliente que desea buscar</p> 
+      <p>Usted puede filtrar por ingreso de nombre ó apellido del cliente que desea buscar</p>
       <p>Usted puede filtrar por estado (activos e inactivos) y por fecha de registro del cliente</p> 
       <div class="select_container">
         
@@ -23,7 +23,6 @@
       </div> <!-- select container end-->
 
       <div class="input_container">
-          <input type="text" name="rut" placeholder="RUT">
           <input type="text" name="first_name" placeholder="Nombre">
           <input type="text" name="last_name" placeholder="Apellido">
           <input type="date" name="join_date" placeholder="Fecha de registro">
@@ -38,7 +37,6 @@
             <th>Detalles</th>
             <th>Nombre</th>
             <th>Apellido</th>
-            <th>RUT</th>
             <th>Estado</th>
             <th>Fecha registro</th>
           </tr>
@@ -51,7 +49,6 @@
             </td>
             <td>{{ customer.user.first_name }}</td>
             <td>{{ customer.user.last_name }}</td>
-            <td>{{ customer.rut }}</td>
             <td> 
               {% if customer.user.is_active %}
               <p>Activo</p>

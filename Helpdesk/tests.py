@@ -7,7 +7,7 @@ from django.core.management.base import CommandError
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from Helpdesk.forms import opened_ticket_form
+from Helpdesk.forms import agent_profile_form, customer_profile_form, opened_ticket_form
 from Helpdesk.models import Profile
 from Helpdesk.rbac import (
     BUSINESS_ROLE_GROUPS,
@@ -1171,11 +1171,12 @@ class AgentCompleteProfileAuthorizationTests(TestCase):
         attacker = User.objects.create_user(username="sin_permiso_acp@test.cl", password="x")
         self.client.force_login(attacker)
 
-        # Campos reales requeridos por agent_profile_form: rut, phone (area es
-        # opcional, Profile.area es null=True/blank=True).
+        # 3.3.2: "rut" ya no es un campo de agent_profile_form (sigue
+        # existiendo en el modelo, blank=True). El unico campo realmente
+        # requerido ahora es "phone" (area sigue opcional, null=True/blank=True).
         resp = self.client.post(
             reverse("agent_complete_profile", args=[self.new_agent_user.id]),
-            {"rut": "7-0", "phone": "700"},
+            {"phone": "700"},
         )
         self.assertEqual(resp.status_code, 403)
         self.assertFalse(Profile.objects.filter(user=self.new_agent_user).exists())
@@ -1185,17 +1186,19 @@ class AgentCompleteProfileAuthorizationTests(TestCase):
         set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
         self.client.force_login(jefe)
 
+        # 3.3.2: ya no se envia "rut" - el campo salio de agent_profile_form.
         resp = self.client.post(
             reverse("agent_complete_profile", args=[self.new_agent_user.id]),
-            {"rut": "8-0", "phone": "800"},
+            {"phone": "800"},
         )
         self.assertEqual(resp.status_code, 302)
         created_profile = Profile.objects.get(user=self.new_agent_user)
         # El perfil creado debe quedar asociado exactamente al usuario cuyo id
         # se paso en la URL, no al usuario que hizo la peticion (jefe).
         self.assertEqual(created_profile.user_id, self.new_agent_user.id)
-        self.assertEqual(created_profile.rut, "8-0")
         self.assertEqual(created_profile.phone, "800")
+        # El campo ya no se pide: queda en su valor por defecto del modelo.
+        self.assertEqual(created_profile.rut, "")
 
 
 # ---------------------------------------------------------------------------
@@ -1234,11 +1237,14 @@ class ListCustomersAuthorizationTests(TestCase):
 
     def test_agente_sin_area_y_sin_tickets_ve_lista_vacia(self):
         agent_user, _ = self._make_agent("agente_lc1@test.cl", area=None)
-        self._make_customer("cliente_lc2@test.cl", "2-2")  # fuera de alcance
+        # 3.3.2: "rut" ya no se muestra en list_customers.html (RUT dejo de
+        # ser obligatorio y de pedirse al usuario); se verifica por el link
+        # de detalle de ese cliente en vez de un fragmento de RUT.
+        fuera_de_alcance = self._make_customer("cliente_lc2@test.cl", "2-2")
         self.client.force_login(agent_user)
         resp = self.client.get(reverse("customers"))
         self.assertEqual(resp.status_code, 200)
-        self.assertNotContains(resp, "2-2")
+        self.assertNotContains(resp, reverse("customer_view", args=[fuera_de_alcance.id]))
 
     def test_agente_ve_cliente_dentro_de_alcance_por_opening_agent(self):
         agent_user, agent_profile = self._make_agent("agente_lc2@test.cl", area=None)
@@ -1252,7 +1258,7 @@ class ListCustomersAuthorizationTests(TestCase):
         self.client.force_login(agent_user)
         resp = self.client.get(reverse("customers"))
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "3-3")
+        self.assertContains(resp, reverse("customer_view", args=[customer_profile.id]))
 
     def test_lista_de_agente_no_duplica_cliente_con_varios_tickets_en_alcance(self):
         agent_user, agent_profile = self._make_agent("agente_lc3@test.cl", area=self.area)
@@ -1274,7 +1280,8 @@ class ListCustomersAuthorizationTests(TestCase):
         resp = self.client.get(reverse("customers"))
         self.assertEqual(resp.status_code, 200)
         # El cliente debe aparecer en la tabla exactamente una vez.
-        self.assertEqual(resp.content.decode().count("4-4"), 1)
+        link = reverse("customer_view", args=[customer_profile.id])
+        self.assertEqual(resp.content.decode().count(link), 1)
 
     def test_jefe_de_mesa_non_superuser_ve_todos_los_clientes_sin_alcance(self):
         jefe = User.objects.create_user(username="jefe_lc@test.cl", password="x")
@@ -1283,7 +1290,7 @@ class ListCustomersAuthorizationTests(TestCase):
         self.client.force_login(jefe)
         resp = self.client.get(reverse("customers"))
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "5-5")
+        self.assertContains(resp, reverse("customer_view", args=[customer_profile.id]))
 
 
 class CustomerViewAuthorizationTests(TestCase):
@@ -1475,13 +1482,15 @@ class ListAgentsAuthorizationTests(TestCase):
         jefe = User.objects.create_user(username="jefe_la@test.cl", password="x")
         set_user_role_group(jefe, ROLE_JEFE_DE_MESA)
         other_agent_user = User.objects.create_user(username="agente_la2@test.cl", password="x", is_staff=True)
-        Profile.objects.create(user=other_agent_user, rut="31-1", phone="311")
+        other_agent_profile = Profile.objects.create(user=other_agent_user, rut="31-1", phone="311")
         set_user_role_group(other_agent_user, ROLE_AGENTE)
 
         self.client.force_login(jefe)
         resp = self.client.get(reverse("agents"))
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "31-1")
+        # 3.3.2: "rut" ya no se muestra en list_agents.html; se verifica por
+        # el link de detalle de ese agente en vez de un fragmento de RUT.
+        self.assertContains(resp, reverse("agent_view", args=[other_agent_profile.id]))
 
 
 class ProfileClassificationByGroupTests(TestCase):
@@ -2714,13 +2723,14 @@ class CustomerCompleteProfileAuthorizationTests(TestCase):
     def test_cliente_completa_su_propio_perfil(self):
         cliente = self._cliente_sin_perfil("1")
         self.client.force_login(cliente)
+        # 3.3.2: "rut" ya no es un campo de customer_profile_form.
         resp = self.client.post(
             reverse("customer_complete_profile", args=[cliente.id]),
-            {"rut": "11111111-1", "phone": "111111111"},
+            {"phone": "111111111"},
         )
         self.assertEqual(resp.status_code, 302)
         profile = Profile.objects.get(user=cliente)
-        self.assertEqual(profile.rut, "11111111-1")
+        self.assertEqual(profile.phone, "111111111")
 
     def test_cliente_no_puede_completar_perfil_de_otro_cambiando_id(self):
         cliente = self._cliente_sin_perfil("2")
@@ -2740,13 +2750,14 @@ class CustomerCompleteProfileAuthorizationTests(TestCase):
         self.client.force_login(agente)
         nuevo_cliente = self._registrar_cliente_asistido(self.client, "3")
 
+        # 3.3.2: "rut" ya no es un campo de customer_profile_form.
         resp = self.client.post(
             reverse("customer_complete_profile", args=[nuevo_cliente.id]),
-            {"rut": "33333333-3", "phone": "333333333"},
+            {"phone": "333333333"},
         )
         self.assertEqual(resp.status_code, 302)
         profile = Profile.objects.get(user=nuevo_cliente)
-        self.assertEqual(profile.rut, "33333333-3")
+        self.assertEqual(profile.phone, "333333333")
 
     def test_jefe_de_mesa_non_superuser_registro_asistido(self):
         jefe = self._jefe("4")
@@ -2857,6 +2868,22 @@ class CustomerCompleteProfileAuthorizationTests(TestCase):
         self.client.force_login(cliente)
         resp = self.client.put(reverse("customer_complete_profile", args=[cliente.id]))
         self.assertEqual(resp.status_code, 405)
+
+    def test_registro_valido_no_requiere_rut(self):
+        # 3.3.2: confirma explicitamente que completar el perfil de un
+        # Cliente sin enviar "rut" en absoluto funciona - el campo salio de
+        # customer_profile_form (sigue existiendo en el modelo, blank=True).
+        cliente = self._cliente_sin_perfil("13")
+        self.assertNotIn("rut", customer_profile_form().fields)
+        self.client.force_login(cliente)
+        resp = self.client.post(
+            reverse("customer_complete_profile", args=[cliente.id]),
+            {"phone": "130000000"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        profile = Profile.objects.get(user=cliente)
+        self.assertEqual(profile.phone, "130000000")
+        self.assertEqual(profile.rut, "")
 
     # --- El autorregistro publico sigue funcionando ---
 
@@ -3286,30 +3313,44 @@ class AgentCompleteProfileAdditionalTests(TestCase):
         resp = self.client.get(reverse("agent_complete_profile", args=[self.new_agent_user.id]))
         self.assertEqual(resp.status_code, 200)
 
-    def test_registro_valido_guarda_rut_phone_y_area(self):
+    def test_registro_valido_guarda_phone_y_area(self):
+        # 3.3.2: "rut" ya no es un campo de agent_profile_form (sigue
+        # existiendo en el modelo, blank=True, para no perder historicos).
         area = Area.objects.create(area_description="Soporte 3.2.4")
         self.client.force_login(self.jefe)
         resp = self.client.post(
             reverse("agent_complete_profile", args=[self.new_agent_user.id]),
-            {"rut": "9-1", "phone": "910", "area": area.id},
+            {"phone": "910", "area": area.id},
         )
         self.assertEqual(resp.status_code, 302)
         profile = Profile.objects.get(user=self.new_agent_user)
-        self.assertEqual(profile.rut, "9-1")
         self.assertEqual(profile.phone, "910")
         self.assertEqual(profile.area_id, area.id)
+        self.assertEqual(profile.rut, "")
 
     def test_formulario_invalido_no_crea_profile(self):
-        # rut/phone son obligatorios en el modelo; un POST sin ellos no
-        # debe crear un Profile a medio llenar, y debe devolver 200 (nunca
-        # un 500 por excepcion no capturada).
+        # "phone" sigue siendo obligatorio en el modelo (rut ya no, desde
+        # 3.3.2): un POST sin el no debe crear un Profile a medio llenar, y
+        # debe devolver 200 (nunca un 500 por excepcion no capturada).
         self.client.force_login(self.jefe)
         resp = self.client.post(
             reverse("agent_complete_profile", args=[self.new_agent_user.id]),
-            {"rut": "", "phone": ""},
+            {"phone": ""},
         )
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(Profile.objects.filter(user=self.new_agent_user).exists())
+
+    def test_registro_valido_no_requiere_rut(self):
+        # Confirma explicitamente el objetivo de 3.3.2: completar el
+        # perfil de un Agente sin enviar "rut" en absoluto funciona.
+        self.client.force_login(self.jefe)
+        self.assertNotIn("rut", agent_profile_form().fields)
+        resp = self.client.post(
+            reverse("agent_complete_profile", args=[self.new_agent_user.id]),
+            {"phone": "911"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(Profile.objects.filter(user=self.new_agent_user, phone="911").exists())
 
     def test_target_que_no_es_agente_da_404(self):
         # Hallazgo adicional: antes no se verificaba que `id` apuntara a un

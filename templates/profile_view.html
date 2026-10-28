@@ -31,7 +31,6 @@
             <h3 class="info personal_info"><i class="icons fa-solid fa-phone"></i>Datos contacto</h3>
             <p class="table_key firstname_key">Nombre:</p>  <p class="table_value firstname_value">{{ user.first_name }}</p>
             <p class="table_key lastname_key">Apellido:</p> <p class="table_value lastname_value"> {{ user.last_name }}</p>
-            <p class="table_key rut_key">RUT: </p> <p class="table_value rut_value">{{ user.profile_user.rut }}</p>
             <p class="table_key phone_key">Teléfono:</p> <p class="table_value phone_value"> {{ user.profile_user.phone }}</p>
         
         <button><a href="{% url 'modify_password' user.profile_user.id %}"><i class="fa-solid fa-unlock-keyhole"></i> Modificar contraseña</a></button>

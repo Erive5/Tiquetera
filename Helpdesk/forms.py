@@ -23,18 +23,16 @@ class customer_creation_form(UserCreationForm):
 class customer_profile_form(forms.ModelForm):
     class Meta:
         model = Profile
-        fields = ['rut', 'phone']      
+        fields = ['phone']
         widgets = {
-            'rut': forms.TextInput(attrs={'placeholder': 'Ingrese su RUT'}),
             'phone': forms.TextInput(attrs={'placeholder': 'Ingrese su número de teléfono'}),
         } 
             
 class agent_profile_form(forms.ModelForm):
     class Meta:
         model = Profile
-        fields = ['rut', 'phone', 'area']
+        fields = ['phone', 'area']
         widgets = {
-            'rut': forms.TextInput(attrs={'placeholder': 'Ingrese su RUT'}),
             'phone': forms.TextInput(attrs={'placeholder': 'Ingrese su número de teléfono'}),
         }
 #USER MODIFY DATA FORMS

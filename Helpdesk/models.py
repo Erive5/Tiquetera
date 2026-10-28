@@ -44,7 +44,7 @@ class Area(models.Model):
 
 class Profile(models.Model):
     user = models.OneToOneField(User,on_delete=models.CASCADE, related_name='profile_user', verbose_name="Usuario")
-    rut = models.CharField(max_length=12, verbose_name="RUT")
+    rut = models.CharField(max_length=12, verbose_name="RUT", blank=True)
     phone = models.CharField(max_length=9, verbose_name="Teléfono")
     area = models.ForeignKey(Area, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Área")
 
