@@ -129,33 +129,44 @@ def modify_password(request, id):
 # CLIENTES
 def customer_signup(request):
     if request.method == 'GET':
-        return render (request, 'customer/customer_signup.html', {'form': customer_creation_form})
-    try:
-        with transaction.atomic():
-            new_user = User.objects.create_user(
-                username=request.POST['username'],
-                password=request.POST['password1'],
-                first_name=request.POST['first_name'].capitalize(),
-                last_name=request.POST['last_name'].capitalize()
-            )
-            new_user.save()
-            set_user_role_group(new_user, ROLE_CLIENTE)
-        if not request.user.is_authenticated:
-            print("usuario valido")
-            login(request, new_user)
-            return redirect('customer_complete_profile', customer_id = new_user.id)
-        # 2.3: registro asistido (un Agente/Jefe de Mesa, ya autenticado,
-        # registra a un cliente por el). El marcador que autoriza a
-        # completar ESE perfil se fija aqui, en la sesion de quien esta
-        # haciendo el registro, solo DESPUES de haber creado efectivamente
-        # a new_user - nunca se acepta un id de cliente propuesto por el
-        # navegador (ver customer_complete_profile).
-        request.session['pending_assisted_customer_id'] = new_user.id
+        return render(request, 'customer/customer_signup.html', {'form': customer_creation_form()})
+
+    # 3.2.2: se valida con el formulario real (hereda de UserCreationForm)
+    # en vez de leer el POST a mano. Esto activa, gratis, lo que Django ya
+    # trae: coincidencia de password1/password2, AUTH_PASSWORD_VALIDATORS
+    # (longitud, comunes, solo numericas, similitud con el usuario) y un
+    # error de formulario legible para username duplicado (clean_username),
+    # en vez de una excepcion cruda de la base de datos. Un formulario
+    # invalido nunca llega a crear nada.
+    form = customer_creation_form(request.POST)
+    if not form.is_valid():
+        return render(request, 'customer/customer_signup.html', {'form': form})
+
+    with transaction.atomic():
+        # Meta de UserCreationForm solo declara 'username' entre sus
+        # campos de modelo: form.save() hashea la contraseña y persiste
+        # username, pero first_name/last_name (declarados aparte en
+        # customer_creation_form) hay que asignarlos a mano antes de
+        # guardar, igual que antes de este cambio.
+        new_user = form.save(commit=False)
+        new_user.first_name = form.cleaned_data['first_name'].capitalize()
+        new_user.last_name = form.cleaned_data['last_name'].capitalize()
+        new_user.save()
+        set_user_role_group(new_user, ROLE_CLIENTE)
+
+    if not request.user.is_authenticated:
+        login(request, new_user)
         return redirect('customer_complete_profile', customer_id=new_user.id)
-    except Exception as e:
-        err= e
-        return render(request, 'customer/customer_signup.html', {'form': customer_creation_form,
-                                                                'error': err})
+    # 2.3: registro asistido (un Agente/Jefe de Mesa, ya autenticado,
+    # registra a un cliente por el). El marcador que autoriza a
+    # completar ESE perfil se fija aqui, en la sesion de quien esta
+    # haciendo el registro, solo DESPUES de haber creado efectivamente
+    # a new_user - nunca se acepta un id de cliente propuesto por el
+    # navegador (ver customer_complete_profile). No se llama login()
+    # aqui: la sesion de quien esta registrando (Agente/Jefe de Mesa)
+    # se mantiene intacta, nunca se autentica como el nuevo Cliente.
+    request.session['pending_assisted_customer_id'] = new_user.id
+    return redirect('customer_complete_profile', customer_id=new_user.id)
 
 @login_required
 @require_http_methods(["GET", "POST"])

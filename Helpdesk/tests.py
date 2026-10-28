@@ -272,7 +272,7 @@ class SignupViewGroupAssignmentTests(TestCase):
 
     def test_customer_signup_assigns_cliente_group(self):
         self.client.post(reverse("customer_signup"), {
-            "username": "nuevo_cliente@test.cl", "password1": "x",
+            "username": "nuevo_cliente@test.cl", "password1": "Cu3nta$ecura99", "password2": "Cu3nta$ecura99",
             "first_name": "A", "last_name": "B",
         })
         user = User.objects.get(username="nuevo_cliente@test.cl")
@@ -2683,7 +2683,7 @@ class CustomerCompleteProfileAuthorizationTests(TestCase):
         # de sesion se fije exactamente como lo haria un Agente/Jefe de
         # Mesa real registrando a un cliente por el.
         resp = client.post(reverse("customer_signup"), {
-            "username": f"nuevo_ccp_{suffix}@test.cl", "password1": "x",
+            "username": f"nuevo_ccp_{suffix}@test.cl", "password1": "Cu3nta$ecura99", "password2": "Cu3nta$ecura99",
             "first_name": "A", "last_name": "B",
         })
         self.assertEqual(resp.status_code, 302)
@@ -2842,7 +2842,7 @@ class CustomerCompleteProfileAuthorizationTests(TestCase):
 
     def test_autorregistro_publico_sigue_funcionando(self):
         resp = self.client.post(reverse("customer_signup"), {
-            "username": "publico_ccp@test.cl", "password1": "x",
+            "username": "publico_ccp@test.cl", "password1": "Cu3nta$ecura99", "password2": "Cu3nta$ecura99",
             "first_name": "A", "last_name": "B",
         })
         self.assertEqual(resp.status_code, 302)
@@ -2857,3 +2857,119 @@ class CustomerCompleteProfileAuthorizationTests(TestCase):
         )
         self.assertEqual(resp.status_code, 302)
         self.assertTrue(Profile.objects.filter(user=nuevo).exists())
+
+
+# ---------------------------------------------------------------------------
+# Incremento 3.2.2: validacion real de customer_signup (formulario +
+# validadores nativos de Django), sin tocar el modelo de negocio de
+# tickets, perfiles incompletos ni RUT/telefono.
+# ---------------------------------------------------------------------------
+
+class CustomerSignupValidationTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    VALID_PASSWORD = "Cu3nta$ecura99"
+
+    def _post(self, client, **overrides):
+        data = {
+            "username": "cliente_3_2_2@test.cl",
+            "password1": self.VALID_PASSWORD,
+            "password2": self.VALID_PASSWORD,
+            "first_name": "A",
+            "last_name": "B",
+        }
+        data.update(overrides)
+        return client.post(reverse("customer_signup"), data)
+
+    # --- Camino feliz ---
+
+    def test_get_muestra_el_formulario(self):
+        # Antes de este incremento, el GET pasaba la *clase*
+        # customer_creation_form (no una instancia) a la plantilla, que
+        # intentaba acceder a form.username.label_tag -> AttributeError.
+        resp = self.client.get(reverse("customer_signup"))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_registro_valido_crea_usuario_y_asigna_cliente(self):
+        resp = self._post(self.client)
+        self.assertEqual(resp.status_code, 302)
+        user = User.objects.get(username="cliente_3_2_2@test.cl")
+        self.assertEqual(set(user.groups.values_list("name", flat=True)), {ROLE_CLIENTE})
+        self.assertTrue(user.check_password(self.VALID_PASSWORD))
+
+    # --- Negativos: nunca deben crear un usuario ---
+
+    def test_password2_no_coincide_no_crea_usuario(self):
+        resp = self._post(self.client, password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="cliente_3_2_2@test.cl").exists())
+        self.assertFalse(resp.context["form"].is_valid())
+
+    def test_password_debil_no_crea_usuario(self):
+        # "password" esta en la lista de CommonPasswordValidator y
+        # ademas no cumple el minimo de longitud por si sola en otros
+        # casos; aqui se prueba explicitamente el caso comun.
+        resp = self._post(self.client, password1="password", password2="password")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="cliente_3_2_2@test.cl").exists())
+
+    def test_password_solo_numerica_no_crea_usuario(self):
+        resp = self._post(self.client, password1="12345678", password2="12345678")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="cliente_3_2_2@test.cl").exists())
+
+    def test_username_duplicado_no_crea_segundo_usuario_ni_expone_error_de_bd(self):
+        self._post(self.client)
+        self.assertEqual(User.objects.filter(username="cliente_3_2_2@test.cl").count(), 1)
+
+        resp = self._post(self.client)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(User.objects.filter(username="cliente_3_2_2@test.cl").count(), 1)
+        # El error debe venir del formulario (clean_username), nunca de
+        # una excepcion cruda de la base de datos tipo "UNIQUE constraint".
+        self.assertNotIn("UNIQUE", resp.content.decode())
+        self.assertIn(
+            "username",
+            resp.context["form"].errors,
+        )
+
+    def test_formulario_invalido_no_modifica_sesion_del_visitante_anonimo(self):
+        resp = self._post(self.client, password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    # --- Sesiones: el registro asistido no debe autenticar como el nuevo Cliente ---
+
+    def _jefe_de_mesa(self, suffix):
+        user = User.objects.create_user(username=f"jefe_3_2_2_{suffix}@test.cl", password="x")
+        Profile.objects.create(user=user, rut=f"9{suffix}-0", phone=f"90{suffix}")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user
+
+    def test_registro_asistido_conserva_la_sesion_de_quien_registra(self):
+        jefe = self._jefe_de_mesa("1")
+        client = Client()
+        client.force_login(jefe)
+
+        resp = self._post(client, username="asistido_3_2_2@test.cl")
+        self.assertEqual(resp.status_code, 302)
+
+        nuevo = User.objects.get(username="asistido_3_2_2@test.cl")
+        self.assertNotEqual(nuevo.id, jefe.id)
+        # La sesion sigue siendo la del Jefe de Mesa, no la del cliente
+        # recien creado: login() no debe llamarse en el flujo asistido.
+        self.assertEqual(int(client.session["_auth_user_id"]), jefe.id)
+        self.assertEqual(client.session.get("pending_assisted_customer_id"), nuevo.id)
+
+    def test_registro_asistido_invalido_no_crea_usuario_ni_fija_marcador(self):
+        jefe = self._jefe_de_mesa("2")
+        client = Client()
+        client.force_login(jefe)
+
+        resp = self._post(client, username="asistido_invalido_3_2_2@test.cl", password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="asistido_invalido_3_2_2@test.cl").exists())
+        self.assertNotIn("pending_assisted_customer_id", client.session)
+        # La sesion del Jefe de Mesa sigue intacta.
+        self.assertEqual(int(client.session["_auth_user_id"]), jefe.id)
