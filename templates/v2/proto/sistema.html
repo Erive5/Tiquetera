@@ -1,0 +1,200 @@
+{% extends "v2/proto/_layout.html" %}
+{% load static tiquetera_v2 %}
+{% comment %}
+Catálogo del sistema de diseño V1. Los valores y los contrastes se leen de static/v2/css/tokens.css
+en cada carga (una sola fuente de verdad). Los ejemplos usan los mismos componentes que la bandeja.
+{% endcomment %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'v2/css/proto.css' %}">{% endblock %}
+{% block breadcrumb %}<ol><li><a href="{% url 'proto:index' %}">Prototipo</a></li><li><span aria-current="page">Sistema de diseño</span></li></ol>{% endblock %}
+{% block content %}
+<header class="page-header">
+  <div class="page-header__text">
+    <p class="overline">Tiquetera v2 · V1</p>
+    <h1>Sistema de diseño</h1>
+    <p class="page-header__subtitle">Tokens, tipografía y componentes de la bandeja. Raleway en títulos y cifras destacadas; Inter en la interfaz, con cifras tabulares.</p>
+  </div>
+</header>
+
+<nav aria-label="Secciones del catálogo">
+  <ul class="doc-toc" role="list">
+    <li><a href="#color">Color</a></li>
+    <li><a href="#contraste">Contraste</a></li>
+    <li><a href="#tipografia">Tipografía</a></li>
+    <li><a href="#espaciado">Espaciado y forma</a></li>
+    <li><a href="#foco">Foco</a></li>
+    <li><a href="#componentes">Componentes</a></li>
+  </ul>
+</nav>
+
+<section class="panel doc-section" id="color" aria-labelledby="color-titulo">
+  <header>
+    <h2 id="color-titulo">Color</h2>
+    <p class="doc-section__lead">La paleta aprobada se traduce en roles semánticos. Los componentes nunca usan un color de la paleta directamente: usan su rol.</p>
+  </header>
+  <h3>Paleta base</h3>
+  <ul class="swatches" role="list">
+    {% for c in paleta %}
+    <li class="swatch"><span class="swatch__chip" style="background: var(--{{ c.token }})"></span><span class="swatch__name">--{{ c.token }}</span><span class="swatch__value">{{ c.valor }}</span></li>
+    {% endfor %}
+  </ul>
+  <h3>Roles semánticos</h3>
+  <ul class="swatches" role="list">
+    {% for c in roles %}
+    <li class="swatch"><span class="swatch__chip" style="background: var(--{{ c.token }})"></span><span class="swatch__name">--{{ c.token }}</span><span class="swatch__value">{{ c.valor }} · {{ c.ref }}</span></li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel doc-section" id="contraste" aria-labelledby="contraste-titulo">
+  <header>
+    <h2 id="contraste-titulo">Contraste (WCAG 2.2 AA)</h2>
+    <p class="doc-section__lead">Calculado al cargar esta página a partir de tokens.css. Texto: mínimo 4,5:1. Bordes de controles y anillo de foco: mínimo 3:1.
+      {% if contrastes_ok %}<span class="contrast-ok">{% icon "check" %}Todas las combinaciones cumplen.</span>{% else %}<span class="contrast-fail">{% icon "circle-alert" %}Hay combinaciones que no cumplen.</span>{% endif %}</p>
+  </header>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Tabla de contrastes">
+    <table class="doc-table">
+      <caption class="sr-only">Contraste de cada combinación de tokens</caption>
+      <thead><tr><th scope="col">Uso</th><th scope="col">Muestra</th><th scope="col">Tokens</th><th scope="col">Ratio</th><th scope="col">Resultado</th></tr></thead>
+      <tbody>
+        {% for c in contrastes %}
+        <tr>
+          <td>{{ c.uso }}</td>
+          <td>{% if c.minimo == 3.0 %}<span class="contrast-sample contrast-sample--ui" style="border-color: var(--{{ c.fg }}); background: var(--{{ c.bg }})"><span class="sr-only">Borde de muestra</span></span>{% else %}<span class="contrast-sample" style="color: var(--{{ c.fg }}); background: var(--{{ c.bg }})">Aa 123</span>{% endif %}</td>
+          <td><code>--{{ c.fg }}</code> sobre <code>--{{ c.bg }}</code></td>
+          <td class="tnum">{{ c.ratio }}:1</td>
+          <td>{% if c.ok %}<span class="contrast-ok">{% icon "check" %}Cumple (≥ {{ c.minimo }})</span>{% else %}<span class="contrast-fail">{% icon "x" %}No cumple (≥ {{ c.minimo }})</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel doc-section" id="tipografia" aria-labelledby="tipo-titulo">
+  <header>
+    <h2 id="tipo-titulo">Tipografía</h2>
+    <p class="doc-section__lead">Raleway 700/800 para títulos, marca y cifras destacadas (con cifras alineadas, <code>lnum</code>). Inter 400/500/600 para todo lo demás, con cifras tabulares (<code>tnum</code>) en IDs, fechas y conteos. Fuentes locales en woff2.</p>
+  </header>
+  <div>
+    {% for t in tipos %}
+    <div class="type-row">
+      <div class="type-row__meta"><b>{{ t.uso }}</b><span>--text-{{ t.clave }} · {{ t.tamano }} / {{ t.interlineado }}</span><span>{{ t.fuente }}</span></div>
+      <div class="t-{{ t.clave }}">{{ t.muestra }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <h3>Cifras en columna</h3>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Ejemplo de cifras tabulares">
+    <table class="ticket-table">
+      <caption class="sr-only">Ejemplo de cifras tabulares</caption>
+      <thead><tr><th scope="col">ID</th><th scope="col">Apertura</th><th scope="col">Antigüedad</th></tr></thead>
+      <tbody>
+        <tr><td class="cell-id">#9031</td><td class="tnum">17/10/2026</td><td class="tnum">12 días</td></tr>
+        <tr><td class="cell-id">#9111</td><td class="tnum">26/10/2026</td><td class="tnum">3 días</td></tr>
+        <tr><td class="cell-id">#9145</td><td class="tnum">29/10/2026</td><td class="tnum">Hoy</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel doc-section" id="espaciado" aria-labelledby="esp-titulo">
+  <header>
+    <h2 id="esp-titulo">Espaciado y forma</h2>
+    <p class="doc-section__lead">Escala en base 4/8. Radios pequeños en controles, medianos en paneles. Sombras suaves teñidas con azul tinta.</p>
+  </header>
+  <div class="stack">
+    {% for e in espacios %}
+    <div class="space-row"><code>--{{ e.token }}</code><span class="text-muted tnum">{{ e.valor }}</span><span class="space-bar" style="width: var(--{{ e.token }})"></span></div>
+    {% endfor %}
+  </div>
+  <div class="specimen">
+    {% for r in radios %}<div class="shape" style="border-radius: var(--{{ r.token }})">--{{ r.token }}</div>{% endfor %}
+    {% for s in sombras %}<div class="shape" style="box-shadow: var(--{{ s }}); border-radius: var(--radius-md)">--{{ s }}</div>{% endfor %}
+  </div>
+</section>
+
+<section class="panel doc-section" id="foco" aria-labelledby="foco-titulo">
+  <header>
+    <h2 id="foco-titulo">Foco</h2>
+    <p class="doc-section__lead">Anillo de 2 px con 2 px de separación, visible en cualquier elemento interactivo. Sobre la navegación oscura usa un tono claro.</p>
+  </header>
+  <div class="specimen">
+    <span class="btn btn--secondary focus-demo">Botón con foco</span>
+    <div class="on-dark"><span class="nav-link focus-demo">{% icon "inbox" %}Enlace de navegación con foco</span></div>
+  </div>
+</section>
+
+<section class="panel doc-section" id="componentes" aria-labelledby="comp-titulo">
+  <header>
+    <h2 id="comp-titulo">Componentes</h2>
+    <p class="doc-section__lead">Los mismos componentes que usa la bandeja. Cada uno documenta sus entradas en su plantilla (templates/v2/components/).</p>
+  </header>
+
+  <h3>Botones</h3>
+  <div class="specimen">
+    <span class="btn btn--primary">{% icon "plus" %}Primario</span>
+    <span class="btn btn--secondary">{% icon "filter" %}Secundario</span>
+    <span class="btn btn--ghost">Fantasma</span>
+    <span class="btn btn--secondary btn--sm">Pequeño</span>
+    <button type="button" class="btn btn--primary" disabled>Deshabilitado</button>
+  </div>
+  <p class="t-help">Regla: una sola acción primaria visible por vista.</p>
+
+  <h3>Estado (tono por categoría, texto = nombre real)</h3>
+  <div class="specimen">
+    <span class="status status--open">A resolución</span>
+    <span class="status status--open">En espera del cliente</span>
+    <span class="status status--resolved">Resuelto</span>
+    <span class="status status--na">No aplica</span>
+    <span class="status status--unclassified">{% icon "circle-help" %}Sin clasificar · Anulado</span>
+  </div>
+
+  <h3>Prioridad (icono + texto)</h3>
+  <div class="specimen">
+    {% for p in prioridades %}<span class="priority priority--{{ p.valor }}">{% icon p.icono %}{{ p.nombre }}</span>{% endfor %}
+  </div>
+
+  <h3>Antigüedad</h3>
+  <div class="specimen">
+    {% for ticket in muestra %}{% include "v2/components/ticket_age.html" %}{% endfor %}
+  </div>
+  <p class="t-help">Desde {{ umbral }} días se destaca con icono y color. Es un umbral del prototipo, no un acuerdo de nivel de servicio.</p>
+
+  <h3>Campos</h3>
+  <div class="specimen specimen--top">
+    <div class="field demo-field">
+      <label class="field__label" for="demo-normal">Etiqueta</label>
+      <input class="control" id="demo-normal" type="text" value="Texto ingresado">
+      <p class="field__help">Texto de ayuda breve.</p>
+    </div>
+    <div class="field demo-field">
+      <label class="field__label" for="demo-error">Con error</label>
+      <input class="control" id="demo-error" type="text" value="31-02-2026" aria-invalid="true" aria-describedby="demo-error-msg">
+      <p class="field__error" id="demo-error-msg">Usa una fecha válida (dd-mm-aaaa).</p>
+    </div>
+    <div class="field demo-field">
+      <label class="field__label" for="demo-disabled">Deshabilitado</label>
+      <input class="control" id="demo-disabled" type="text" value="No editable" disabled>
+    </div>
+  </div>
+
+  <h3>Chips de filtros activos</h3>
+  <ul class="chips" role="list">
+    <li><span class="chip">Prioridad: <b>Alta</b>{% icon "x" %}</span></li>
+    <li><span class="chip">Tipo: <b>Reclamo</b>{% icon "x" %}</span></li>
+    <li><span class="chips__clear">Limpiar filtros</span></li>
+  </ul>
+
+  <h3>Mensajes</h3>
+  <div class="stack">
+    <div class="alert alert--info">{% icon "info" %}<div class="alert__body"><p class="alert__title">Informativo</p><p>Contexto útil que no bloquea la tarea.</p></div></div>
+    <div class="alert alert--warning">{% icon "triangle-alert" %}<div class="alert__body"><p class="alert__title">Advertencia</p><p>Algo se ignoró o requiere atención.</p></div></div>
+    <div class="alert alert--error">{% icon "circle-alert" %}<div class="alert__body"><p class="alert__title">Error</p><p>Qué falló y cómo resolverlo.</p></div></div>
+  </div>
+
+  <h3>Tabla de tickets</h3>
+  <div class="panel">
+    {% with tickets=muestra %}{% include "v2/components/ticket_table.html" %}{% endwith %}
+  </div>
+</section>
+{% endblock %}

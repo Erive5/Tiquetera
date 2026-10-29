@@ -1,0 +1,14 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: paginación. Entrada: paginacion {pagina, paginas, desde, hasta, total, anterior_url, siguiente_url, enlaces}.
+{% endcomment %}<nav class="pagination" aria-label="Paginación">
+  <p class="pagination__info">Página <strong>{{ paginacion.pagina }}</strong> de <strong>{{ paginacion.paginas }}</strong> · {{ paginacion.desde }}–{{ paginacion.hasta }} de {{ paginacion.total }}</p>
+  {% if paginacion.paginas > 1 %}
+  <ul class="pagination__list" role="list">
+    <li>{% if paginacion.anterior_url %}<a class="page-link" href="{{ paginacion.anterior_url }}">{% icon "chevron-left" %}<span class="sr-only">Página anterior</span></a>{% else %}<span class="page-link page-link--disabled" aria-hidden="true">{% icon "chevron-left" %}</span>{% endif %}</li>
+    {% for e in paginacion.enlaces %}
+    <li><a class="page-link" href="{{ e.url }}"{% if e.actual %} aria-current="page"{% endif %}><span class="sr-only">Página </span>{{ e.numero }}</a></li>
+    {% endfor %}
+    <li>{% if paginacion.siguiente_url %}<a class="page-link" href="{{ paginacion.siguiente_url }}">{% icon "chevron-right" %}<span class="sr-only">Página siguiente</span></a>{% else %}<span class="page-link page-link--disabled" aria-hidden="true">{% icon "chevron-right" %}</span>{% endif %}</li>
+  </ul>
+  {% endif %}
+</nav>

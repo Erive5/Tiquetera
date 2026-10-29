@@ -1,0 +1,21 @@
+{% extends "v2/proto/_layout.html" %}
+{% load tiquetera_v2 %}
+{% block breadcrumb %}
+<ol>
+  <li><a href="{% url 'proto:index' %}">Prototipo</a></li>
+  <li><span aria-current="page">No incluido en V1</span></li>
+</ol>
+{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="fuera-titulo">
+  <div class="empty">
+    <div class="empty__art">{% icon "layout-grid" %}</div>
+    <h1 class="empty__title" id="fuera-titulo">Esta pantalla no forma parte de V1</h1>
+    <p class="empty__text">V1 solo incluye la bandeja «Pendientes en mi área» y el sistema de diseño. El detalle del ticket, la resolución y las demás secciones se diseñarán en los próximos incrementos.</p>
+    <div class="empty__actions">
+      <a class="btn btn--primary" href="{% url 'proto:bandeja' %}">{% icon "arrow-left" %}Volver a mis pendientes</a>
+      <a class="btn btn--secondary" href="{% url 'proto:index' %}">Índice del prototipo</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

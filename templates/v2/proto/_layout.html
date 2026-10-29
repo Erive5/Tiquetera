@@ -1,0 +1,15 @@
+{% extends "v2/base.html" %}
+{% load tiquetera_v2 %}
+{% comment %}
+Layout exclusivo del prototipo V1: datos ficticios, solo desarrollo local.
+Añade noindex y la banda "PROTOTIPO" en todas las páginas /_proto/ (criterio S-5).
+{% endcomment %}
+{% block meta %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block title %}{{ page_title }} · Prototipo Tiquetera v2{% endblock %}
+{% block banner %}
+<section class="proto-band" aria-label="Aviso de prototipo">
+  <span class="proto-band__item">{% icon "flask-conical" %}<strong>Prototipo</strong></span>
+  <span>Datos ficticios · no operativo<span class="proto-band__extra"> · solo desarrollo local</span></span>
+  <a href="{% url 'proto:index' %}">Índice del prototipo</a>
+</section>
+{% endblock %}

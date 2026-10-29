@@ -1,0 +1,38 @@
+{% load static tiquetera_v2 %}<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% block meta %}{% endblock %}
+  <title>{% block title %}{{ page_title }} · Tiquetera{% endblock %}</title>
+  <link rel="preload" href="{% static 'v2/fonts/inter-latin-400-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{% static 'v2/fonts/raleway-latin-700-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{% static 'v2/css/tokens.css' %}">
+  <link rel="stylesheet" href="{% static 'v2/css/base.css' %}">
+  <link rel="stylesheet" href="{% static 'v2/css/layout.css' %}">
+  <link rel="stylesheet" href="{% static 'v2/css/components.css' %}">
+  <link rel="stylesheet" href="{% static 'v2/css/utilities.css' %}">
+  {% block extra_css %}{% endblock %}
+  <script src="{% static 'v2/js/js-flag.js' %}"></script>
+  <script src="{% static 'v2/js/app.js' %}" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+  <div class="app">
+    {% include "v2/components/sidebar.html" %}
+    <div class="app-main">
+      {% block banner %}{% endblock %}
+      <header class="topbar">
+        <button type="button" class="nav-toggle" data-nav-toggle aria-controls="nav-drawer" aria-expanded="false">
+          {% icon "menu" %}<span class="sr-only">Menú de navegación</span>
+        </button>
+        <nav class="breadcrumb" aria-label="Ruta de navegación">{% block breadcrumb %}{% endblock %}</nav>
+      </header>
+      <main id="contenido" class="page" tabindex="-1">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  <div class="drawer-backdrop" data-nav-backdrop hidden></div>
+</body>
+</html>

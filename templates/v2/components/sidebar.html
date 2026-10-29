@@ -1,0 +1,40 @@
+{% load tiquetera_v2 %}
+{% comment %}
+Componente: barra lateral (rol Agente en V1).
+Entradas: inicio_url_name, perfil_url_name, agente {nombre, iniciales, area, rol}, nav_items [{texto, icono, url_name, activo}], nav_count (opcional).
+En escritorio es fija; en tablet/móvil se vuelve cajón (con JS) o lista en flujo (sin JS).
+Cerrar sesión será un POST en la versión integrada; en el prototipo está deshabilitado.
+{% endcomment %}
+<aside class="sidebar" id="nav-drawer" aria-label="Navegación principal">
+<div class="sidebar__inner">
+  <a class="brand" href="{% url inicio_url_name %}">
+    <span class="brand__mark">{% icon "ticket" %}</span>
+    <span class="brand__name">Tiquetera</span>
+  </a>
+  <nav class="nav-section" aria-labelledby="nav-trabajo">
+    <p class="nav-section__title" id="nav-trabajo">Mi trabajo</p>
+    {% for item in nav_items %}
+    <a class="nav-link" href="{% url item.url_name %}"{% if item.activo %} aria-current="page"{% endif %}>
+      {% icon item.icono %}<span>{{ item.texto }}</span>
+      {% if item.clave == "pendientes" and nav_count %}<span class="nav-link__count">{{ nav_count }}<span class="sr-only"> tickets</span></span>{% endif %}
+    </a>
+    {% endfor %}
+  </nav>
+  <nav class="nav-section" aria-labelledby="nav-cuenta">
+    <p class="nav-section__title" id="nav-cuenta">Cuenta</p>
+    <a class="nav-link" href="{% url perfil_url_name %}">{% icon "user" %}<span>Mi perfil</span></a>
+  </nav>
+  <div class="sidebar__footer">
+    <div class="user-chip">
+      <span class="avatar" aria-hidden="true">{{ agente.iniciales }}</span>
+      <div>
+        <p class="user-chip__name">{{ agente.nombre }}</p>
+        <p class="user-chip__meta">{{ agente.rol }} · Área {{ agente.area }}</p>
+      </div>
+    </div>
+    <button type="button" class="logout-btn" disabled title="No disponible en el prototipo">
+      {% icon "log-out" %}Cerrar sesión
+    </button>
+  </div>
+</div>
+</aside>

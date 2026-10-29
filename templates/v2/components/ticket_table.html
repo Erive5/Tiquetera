@@ -1,0 +1,33 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: tabla de tickets (escritorio y tablet). En móvil se oculta y se usan ticket_cards.
+Entradas: tickets, f.orden, agente.area.
+{% endcomment %}<div class="table-wrap table-wrap--tickets" tabindex="0" role="region" aria-label="Tabla de tickets pendientes">
+  <table class="ticket-table">
+    <caption>Tickets pendientes del área <strong>{{ agente.area }}</strong>, ordenados {% if f.orden == "antiguedad" %}del más antiguo al más reciente{% else %}por prioridad y luego por antigüedad{% endif %}.</caption>
+    <thead>
+      <tr>
+        <th scope="col">ID</th>
+        <th scope="col">Asunto</th>
+        <th scope="col"{% if f.orden != "antiguedad" %} aria-sort="descending"{% endif %}><span class="th-sort">Prioridad{% if f.orden != "antiguedad" %}{% icon "arrow-down" %}{% endif %}</span></th>
+        <th scope="col"{% if f.orden == "antiguedad" %} aria-sort="descending"{% endif %}><span class="th-sort">Antigüedad{% if f.orden == "antiguedad" %}{% icon "arrow-down" %}{% endif %}</span></th>
+        <th scope="col">Estado</th>
+        <th scope="col"><span class="sr-only">Acciones</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ticket in tickets %}
+      <tr{% if ticket.prioridad == "alta" %} class="is-high"{% endif %}>
+        <td class="cell-id">#{{ ticket.id }}</td>
+        <td class="cell-subject">
+          <a href="{% url 'proto:fuera_de_alcance' %}">{{ ticket.asunto }}</a>
+          <span class="cell-subject__meta">{{ ticket.cliente }} · {{ ticket.tipo_nombre }}</span>
+        </td>
+        <td>{% include "v2/components/priority.html" %}</td>
+        <td>{% include "v2/components/ticket_age.html" %}</td>
+        <td>{% include "v2/components/status_badge.html" %}</td>
+        <td class="cell-action"><a class="row-link" href="{% url 'proto:fuera_de_alcance' %}">Ver<span class="sr-only"> ticket #{{ ticket.id }}</span>{% icon "chevron-right" %}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

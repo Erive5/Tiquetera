@@ -1,0 +1,4 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: prioridad con icono + texto (nunca solo color).
+Entrada: ticket.prioridad ("alta"|"media"|"baja"|"nula"), ticket.prioridad_nombre, ticket.prioridad_icono.
+{% endcomment %}<span class="priority priority--{{ ticket.prioridad }}">{% icon ticket.prioridad_icono %}{{ ticket.prioridad_nombre }}</span>

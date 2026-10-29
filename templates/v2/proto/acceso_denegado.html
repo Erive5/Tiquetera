@@ -1,0 +1,25 @@
+{% extends "v2/proto/_layout.html" %}
+{% load tiquetera_v2 %}
+{% comment %}
+Estado V1: acceso denegado (HTTP 403). Explica qué pasó sin revelar datos del recurso
+y ofrece la siguiente acción. En la versión integrada lo decidirá siempre el servidor (RBAC).
+{% endcomment %}
+{% block breadcrumb %}
+<ol>
+  <li><a href="{% url 'proto:index' %}">Mi trabajo</a></li>
+  <li><span aria-current="page">Acceso denegado</span></li>
+</ol>
+{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="denegado-titulo">
+  <div class="empty">
+    <div class="empty__art empty__art--lock">{% icon "lock" %}</div>
+    <h1 class="empty__title" id="denegado-titulo">No tienes acceso a esta sección</h1>
+    <p class="empty__text">Tu rol ({{ agente.rol }}) no tiene permiso para ver esta página. Si necesitas acceso, pídeselo al Jefe de Mesa.</p>
+    <div class="empty__actions">
+      <a class="btn btn--primary" href="{% url 'proto:bandeja' %}">{% icon "arrow-left" %}Volver a mis pendientes</a>
+    </div>
+    <p class="empty__ref">Código 403</p>
+  </div>
+</section>
+{% endblock %}

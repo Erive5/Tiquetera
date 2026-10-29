@@ -1,0 +1,5 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: badge de estado. La CATEGORÍA decide el tono; el texto es el nombre real del estado.
+Entrada: ticket.estado_categoria ("open" | "resolved" | "not_applicable" | None) y ticket.estado_nombre.
+None = estado personalizado sin clasificar (decisión D2): badge neutro con borde punteado.
+{% endcomment %}{% if ticket.estado_categoria == "open" %}<span class="status status--open">{{ ticket.estado_nombre }}</span>{% elif ticket.estado_categoria == "resolved" %}<span class="status status--resolved">{{ ticket.estado_nombre }}</span>{% elif ticket.estado_categoria == "not_applicable" %}<span class="status status--na">{{ ticket.estado_nombre }}</span>{% else %}<span class="status status--unclassified">{% icon "circle-help" %}Sin clasificar · {{ ticket.estado_nombre }}</span>{% endif %}

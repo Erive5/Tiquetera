@@ -1,0 +1,169 @@
+/* ==========================================================================
+   Tiquetera v2 — Tokens del sistema de diseño (V1)
+   Único archivo donde se permiten valores literales de color.
+   Ningún otro archivo de static/v2/css debe contener #hex, rgb() o hsl().
+   Los contrastes de cada combinación se calculan y muestran en /_proto/sistema/.
+   ========================================================================== */
+
+/* Orden de capas: este archivo se carga primero, así que fija el orden global. */
+@layer tokens, base, layout, components, utilities;
+
+@layer tokens {
+  :root {
+    /* --- Paleta base aprobada ------------------------------------------- */
+    --brand-ink: #19283F;        /* Azul tinta */
+    --brand-cobalt: #4568F5;     /* Cobalto */
+    --brand-turquoise: #27B9AE;  /* Turquesa */
+    --brand-canvas: #F5F7FB;     /* Fondo claro */
+    --brand-coral: #FF846F;      /* Coral */
+
+    /* --- Neutros (con leve sesgo hacia el azul tinta) -------------------- */
+    --neutral-0: #FFFFFF;
+    --neutral-50: #F5F7FB;
+    --neutral-100: #EEF1F7;
+    --neutral-200: #E3E7EF;
+    --neutral-300: #CDD3DE;
+    --neutral-500: #7A8599;
+    --neutral-600: #5B6472;
+    --neutral-700: #4F5866;
+    --neutral-800: #3D4F6B;
+    --neutral-900: #19283F;
+
+    /* --- Tonos derivados -------------------------------------------------- */
+    --cobalt-50: #EEF1FB;
+    --cobalt-100: #DDE4FD;
+    --cobalt-600: #3A5BD9;
+    --cobalt-700: #2F4BBF;
+    --cobalt-800: #3550C4;
+    --ink-800: #22344F;
+    --ink-700: #2C3F5D;
+    --ink-text: #C9D2E3;
+    --ink-text-muted: #94A3BC;
+    --ink-focus: #A9BBFF;
+    --turquoise-50: #E6F5F3;
+    --turquoise-700: #17716A;
+    --coral-50: #FDEEE9;
+    --coral-100: #FFD9D1;
+    --coral-700: #A3402F;
+    --amber-50: #FDF3E7;
+    --amber-700: #9A4A12;
+    --neutral-badge-bg: #F0F2F5;
+
+    /* --- Roles semánticos ------------------------------------------------- */
+    --color-bg: var(--brand-canvas);
+    --color-surface: var(--neutral-0);
+    --color-surface-sunken: var(--neutral-100);
+    --color-text: var(--brand-ink);
+    --color-text-secondary: var(--neutral-800);
+    --color-text-muted: var(--neutral-600);
+    --color-border: var(--neutral-200);
+    --color-border-strong: var(--neutral-300);
+    --color-border-control: var(--neutral-500);
+
+    --color-primary: var(--cobalt-600);
+    --color-primary-hover: var(--cobalt-700);
+    --color-primary-text: var(--cobalt-600);
+    --color-primary-soft: var(--cobalt-50);
+    --color-on-primary: var(--neutral-0);
+    --color-accent-bar: var(--brand-cobalt);
+
+    --color-focus: var(--cobalt-600);
+    --color-focus-on-dark: var(--ink-focus);
+
+    --color-nav-bg: var(--brand-ink);
+    --color-nav-hover: var(--ink-800);
+    --color-nav-active: var(--ink-700);
+    --color-nav-text: var(--ink-text);
+    --color-nav-text-muted: var(--ink-text-muted);
+    --color-nav-text-active: var(--neutral-0);
+    --color-nav-pill: var(--brand-cobalt);
+
+    --color-proto-bg: var(--brand-coral);
+    --color-proto-text: var(--brand-ink);
+
+    /* Categorías de estado (la categoría decide el tono; el texto es el nombre real) */
+    --status-open-bg: var(--cobalt-50);
+    --status-open-text: var(--cobalt-800);
+    --status-open-dot: var(--brand-cobalt);
+    --status-resolved-bg: var(--turquoise-50);
+    --status-resolved-text: var(--turquoise-700);
+    --status-resolved-dot: var(--brand-turquoise);
+    --status-na-bg: var(--neutral-badge-bg);
+    --status-na-text: var(--neutral-700);
+    --status-na-dot: var(--neutral-500);
+    --status-unclassified-bg: var(--neutral-0);
+    --status-unclassified-text: var(--neutral-700);
+    --status-unclassified-border: var(--neutral-500);
+
+    /* Prioridades (siempre icono + texto) */
+    --priority-high-text: var(--coral-700);
+    --priority-high-bar: var(--brand-coral);
+    --priority-medium-text: var(--brand-ink);
+    --priority-low-text: var(--neutral-600);
+    --priority-none-text: var(--neutral-600);
+
+    /* Mensajes */
+    --alert-info-bg: var(--cobalt-50);
+    --alert-info-border: var(--cobalt-100);
+    --alert-info-text: var(--cobalt-800);
+    --alert-warning-bg: var(--amber-50);
+    --alert-warning-text: var(--amber-700);
+    --alert-error-bg: var(--coral-50);
+    --alert-error-border: var(--coral-100);
+    --alert-error-text: var(--coral-700);
+    --color-aging: var(--amber-700);
+
+    /* --- Tipografía ------------------------------------------------------- */
+    --font-display: "Raleway", "Segoe UI", system-ui, sans-serif;
+    --font-ui: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+
+    /* Escala (tamaño / interlineado) — ver /_proto/sistema/ */
+    --text-display-size: 1.75rem;   --text-display-lh: 2.125rem;  /* 28/34 */
+    --text-display-sm-size: 1.5rem; --text-display-sm-lh: 1.875rem; /* 24/30 móvil */
+    --text-h2-size: 1.25rem;        --text-h2-lh: 1.75rem;        /* 20/28 */
+    --text-h3-size: 1.125rem;       --text-h3-lh: 1.5rem;         /* 18/24 */
+    --text-stat-size: 1.875rem;     --text-stat-lh: 2.25rem;      /* 30/36 */
+    --text-body-size: 1rem;         --text-body-lh: 1.625rem;     /* 16/26 */
+    --text-ui-size: 0.875rem;       --text-ui-lh: 1.25rem;        /* 14/20 */
+    --text-label-size: 0.875rem;    --text-label-lh: 1.25rem;     /* 14/20 */
+    --text-input-size: 1rem;        --text-input-lh: 1.5rem;      /* 16/24 */
+    --text-help-size: 0.8125rem;    --text-help-lh: 1.125rem;     /* 13/18 */
+    --text-overline-size: 0.75rem;  --text-overline-lh: 1rem;     /* 12/16 */
+    --text-button-size: 0.875rem;   --text-button-lh: 1.25rem;    /* 14/20 */
+    --text-badge-size: 0.75rem;     --text-badge-lh: 1rem;        /* 12/16 */
+
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --weight-bold: 700;
+    --weight-extrabold: 800;
+    --tracking-overline: 0.06em;
+    --tracking-display: -0.01em;
+
+    /* --- Espaciado (base 4/8) --------------------------------------------- */
+    --space-1: 0.25rem;  --space-2: 0.5rem;  --space-3: 0.75rem; --space-4: 1rem;
+    --space-5: 1.25rem;  --space-6: 1.5rem;  --space-8: 2rem;    --space-10: 2.5rem;
+    --space-12: 3rem;    --space-16: 4rem;
+
+    /* --- Forma y elevación ------------------------------------------------ */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-pill: 999px;
+    --shadow-1: 0 1px 2px rgba(25, 40, 63, 0.06), 0 1px 1px rgba(25, 40, 63, 0.04);
+    --shadow-2: 0 4px 12px rgba(25, 40, 63, 0.08), 0 1px 3px rgba(25, 40, 63, 0.06);
+    --shadow-3: 0 16px 40px rgba(25, 40, 63, 0.18);
+    --overlay: rgba(25, 40, 63, 0.45);
+    --row-hover: rgba(69, 104, 245, 0.04);
+
+    /* --- Foco --------------------------------------------------------------- */
+    --focus-width: 2px;
+    --focus-offset: 2px;
+
+    /* --- Layout ------------------------------------------------------------- */
+    --sidebar-width: 17.5rem;
+    --content-max: 78rem;
+    --control-height: 2.5rem;   /* 40px: objetivo táctil holgado (≥ 24px WCAG 2.5.8) */
+    --duration-fast: 120ms;
+  }
+}

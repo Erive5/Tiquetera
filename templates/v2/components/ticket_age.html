@@ -1,0 +1,7 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: antigüedad del ticket. Desde el umbral del prototipo (7 días) se destaca con icono y texto.
+Entrada: ticket.dias, ticket.apertura, ticket.antiguo (bool).
+{% endcomment %}<span class="age{% if ticket.antiguo %} age--old{% endif %}">
+  <span class="age__days">{% if ticket.antiguo %}{% icon "clock" %}{% endif %}{{ ticket.dias|dias_texto|capfirst }}{% if ticket.antiguo %}<span class="sr-only"> (más de una semana)</span>{% endif %}</span>
+  <span class="age__date"><time datetime="{{ ticket.apertura|date:'Y-m-d' }}">{{ ticket.apertura|date:"d/m/Y" }}</time></span>
+</span>

@@ -62,3 +62,10 @@ urlpatterns = [
     path('agent_complete_profile/<int:id>/', views.agent_complete_profile, name='agent_complete_profile'),
 ]
 
+# Tiquetera v2 - prototipo V1 (datos ficticios, solo desarrollo local).
+# Se registra unicamente si al arrancar existe TIQUETERA_PROTO=1; ademas cada vista
+# responde 404 si DEBUG es False o si existe RENDER (ver Helpdesk/v2/proto_views.py).
+import os  # noqa: E402
+if os.environ.get("TIQUETERA_PROTO") == "1":
+    from django.urls import include  # noqa: E402
+    urlpatterns.append(path("_proto/", include("Helpdesk.v2.proto_urls")))
