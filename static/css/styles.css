@@ -465,6 +465,347 @@ textarea {
     font-size: 14px;
 }
 
+/* 4.4.6: formularios que usan form.as_p (edit_ticket, solve_ticket,
+   modify_password, modify_user_data, edicion de catalogos). A diferencia
+   de .auth-form/.create-ticket-form, as_p no genera .form-group: cada
+   campo queda envuelto en un <p> simple, con su propio <ul
+   class="errorlist"> cuando corresponde. Estas reglas apuntan
+   directamente a lo que as_p ya genera -- no reemplazan as_p ni envuelven
+   campo por campo. */
+.as-p-form .errorlist {
+    list-style: none;
+    margin: 4px 0 0 0;
+    padding: 0;
+}
+
+.as-p-form .errorlist li {
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger-text);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 14px;
+}
+
+.as-p-form input,
+.as-p-form select,
+.as-p-form textarea {
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+/* Mensaje general (solve_ticket.html): mismo tratamiento visual que ya
+   usa .auth-form form > p para su propio mensaje general -- reutilizado
+   aqui bajo .as-p-form en vez de inventar una clase de "pill" nueva. */
+.as-p-form .form-error-message {
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger-text);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 14px;
+}
+
+/* Riesgo de ensanchamiento (ver diagnostico 4.4.6): .data_container es
+   flex con flex-wrap, sin ancho propio en sus hijos -- el hijo que
+   contiene el formulario (.form_card en modify_password.html; el propio
+   <form> en modify_user_data.html y en los 4 catalogos de edicion, como
+   hermano de <h3>ID: ...</h3>) se agranda o achica segun el contenido mas
+   largo de su fila (shrink-to-fit), incluyendo el texto de un errorlist
+   que en realidad termina en su propia linea. flex-basis:100% fuerza a
+   que ese hijo ocupe siempre una fila completa, sin depender de su
+   contenido -- mismo mecanismo ya usado arriba en
+   .create-ticket-form .errorlist, no un valor nuevo inventado. No aplica
+   a edit_ticket.html/solve_ticket.html: sus <form> no estan dentro de
+   .data_container (no son items de un contenedor flex), asi que no
+   tienen este riesgo. */
+.as-p-form .data_container > form,
+.as-p-form .data_container > .form_card {
+    flex: 1 1 100%;
+    box-sizing: border-box;
+}
+
+/* 4.4.8 (revision de layout, aprobada tras validacion visual): clase
+   propia (.ticket-edit-form, ademas de .as-p-form que ya traian desde
+   4.4.6) para que estas reglas nuevas NO afecten a modify_password.html,
+   modify_user_data.html ni los 4 catalogos -- esos siguen exactamente
+   como quedaron en 4.4.6, sin tocar ni una regla compartida con ellos.
+
+   La primera version de este incremento usaba un max-width fijo por
+   campo (420px input/select, 720px textarea). Tras la revision visual
+   se descarto: se veia angosto y distinto de create_ticket.html. Esta
+   version adopta el mismo mecanismo que create_ticket.html usa en
+   .form-group (etiqueta a la izquierda + campo con flex:1 que llena la
+   fila), aplicado aqui a los <p> que genera form.as_p (confirmado por
+   inspeccion de as_p(): cada campo es <p><label>...</label><widget></p>,
+   sin anidar <ul class="errorlist">, que es hermano anterior del <p>,
+   nunca hijo -- por eso el selector "form > p" no toca la lista de
+   errores, y .form-error-message tampoco: vive fuera de <form>). En vez
+   de topar el ancho de cada campo, se topa el ancho de la tarjeta
+   completa (max-width mas abajo): los campos siguen llenando su fila
+   (igual que create_ticket.html) pero la tarjeta no se estira sin
+   limite en monitores grandes. */
+.ticket-edit-form {
+    background-color: var(--color-surface);
+    border-radius: 12px;
+    padding: 24px 32px;
+    box-shadow: 0 1px 3px rgba(25, 40, 63, 0.12);
+    box-sizing: border-box;
+    max-width: 1040px;
+    margin: 0 auto;
+    /* .content_box (global, fuera de alcance) aplica text-align:justify;
+       en parrafos cortos como los de .ticket_info eso deja huecos
+       grandes entre palabras al justificar la ultima linea. Se
+       neutraliza solo aqui, sin tocar la regla global. */
+    text-align: left;
+}
+
+.ticket-edit-form h1 {
+    margin: 0 0 8px 0;
+    color: var(--color-text);
+    font-size: 26px;
+}
+
+/* ID del ticket en edit_ticket.html: subtitulo discreto, no es un
+   encabezado de seccion, asi que no lleva la linea divisoria de abajo. */
+.ticket-edit-form h4.ticket_id_label {
+    margin: 0 0 8px 0;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--color-text-muted);
+}
+
+/* Cabecera: titulo + badges de Estado/Prioridad a la vista, sin tener
+   que entrar al detalle del ticket para saber en que estado esta. */
+.ticket-edit-form .ticket_edit_header {
+    margin-bottom: 4px;
+}
+
+/* Estado reutiliza _status_badge.html/.status_badge tal cual (mismo
+   partial que list_tickets_head.html/list_tickets_customer.html). La
+   Prioridad usa la MISMA clase en su variante neutra (--neutral): no
+   existe un mapeo de color por nivel de prioridad en el proyecto (los
+   valores de Priority son texto libre editable desde el catalogo, no
+   un enum fijo como Estado), asi que se evita inventar un significado
+   de color que no esta respaldado por datos reales. */
+.ticket-edit-form .ticket_edit_badges {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 4px 0 16px 0;
+}
+
+/* Layout de 2 columnas (Alternativa A): en edit_ticket.html, formulario
+   principal a la izquierda + panel de contexto a la derecha; en
+   solve_ticket.html, panel de informacion a la izquierda + formulario
+   de resolucion a la derecha. El orden visual lo decide el orden real
+   en el HTML (primer hijo = primera columna), no una propiedad "order"
+   -- asi el orden de lectura en movil (ver mas abajo) coincide siempre
+   con el orden de las columnas en escritorio. */
+.ticket-edit-form .ticket_edit_layout {
+    display: grid;
+    gap: 24px;
+    align-items: start;
+    margin-top: 4px;
+}
+
+.ticket-edit-form .ticket_edit_layout--edit {
+    grid-template-columns: 1fr 300px;
+}
+
+.ticket-edit-form .ticket_edit_layout--solve {
+    grid-template-columns: 300px 1fr;
+}
+
+/* Panel de accion (formulario, en ambas pantallas): borde superior en
+   turquesa para diferenciarlo visualmente del panel de contexto/
+   informacion (que reutiliza .ticket_section, fondo neutro, sin borde
+   de acento) -- "separar claramente contexto y acciones". min-width:0
+   evita que el contenido del formulario fuerce el desborde de la
+   columna en anchos intermedios, antes de llegar al breakpoint de
+   900px que colapsa a una sola columna (ver mas abajo). */
+.ticket-edit-form .ticket_edit_main {
+    background-color: var(--color-surface);
+    border-top: 3px solid var(--color-turquesa);
+    border-radius: 8px;
+    padding: 20px 24px;
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+/* "Resolucion" en solve_ticket.html es hijo directo de .ticket_edit_main
+   (primer elemento del panel): la linea divisoria generica de h3/h4
+   quedaria redundante con el borde de acento de arriba. Selector por
+   relacion directa (> h3), no por posicion respecto a otro encabezado,
+   asi que NO afecta a "Informacion de Cierre" en edit_ticket.html, que
+   vive mas adentro (.ticket_edit_main > form > h3) y si necesita su
+   divisoria porque separa dos grupos de campos dentro del mismo
+   formulario. */
+.ticket-edit-form .ticket_edit_main > h3 {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.ticket-edit-form .ticket_context_panel {
+    min-width: 0;
+}
+
+/* Boton primario (Guardar/Resolver): antes sin clase (solve_ticket) o
+   con clase pero sin estilos propios en esta tarjeta (edit_ticket solo
+   heredaba el estilo de movil de .as-p-form .save_button) -- "destacar
+   el boton primario" con los tokens ya aprobados, sin inventar colores
+   nuevos. */
+.ticket-edit-form .save_button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: auto;
+    padding: 10px 24px;
+    margin: 16px 0 0 0;
+    border: none;
+    border-radius: 8px;
+    background-color: var(--color-cobalto);
+    color: #ffffff;
+    font-family: 'MiParrafo';
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ticket-edit-form .save_button:hover {
+    background-color: var(--color-accent-text);
+}
+
+/* edit_ticket.html envuelve el icono+texto del boton en un <p> (asi
+   estaba desde antes de este incremento); se neutraliza su margen
+   propio para que no descuadre el boton. */
+.ticket-edit-form .save_button p {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ticket-edit-form h3,
+.ticket-edit-form h4 {
+    margin: 20px 0 12px 0;
+    padding-top: 12px;
+    color: var(--color-text);
+    border-top: 1px solid var(--color-border);
+}
+
+/* solve_ticket.html: dos secciones visuales dentro de la misma tarjeta
+   -- "Informacion ticket" (solo lectura) y "Resolucion" (formulario) --
+   en vez de encabezados sueltos sin agrupacion. */
+.ticket-edit-form .ticket_section {
+    background-color: var(--color-bg);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    box-sizing: border-box;
+}
+
+.ticket-edit-form .ticket_section + .ticket_section {
+    margin-top: 20px;
+}
+
+/* El h3 ya queda dentro de su propia caja (.ticket_section): la linea
+   divisoria de arriba quedaria duplicada con el borde de la caja. */
+.ticket-edit-form .ticket_section h3 {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* Filas etiqueta/campo de form.as_p, mismo mecanismo que
+   .register-form .form-group de create_ticket.html: etiqueta fija a la
+   izquierda, campo con flex:1 llenando el resto de la fila. min-width:0
+   evita que el campo se niegue a encogerse (comportamiento por defecto
+   de los hijos flex) y desborde en pantallas angostas. */
+.ticket-edit-form form > p {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    margin: 0 0 16px 0;
+}
+
+.ticket-edit-form form > p > label {
+    width: 180px;
+    flex-shrink: 0;
+    text-align: right;
+    color: var(--color-text);
+}
+
+.ticket-edit-form input,
+.ticket-edit-form select,
+.ticket-edit-form textarea {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* El textarea (Observacion/Solucion) necesita mas alto que un input de
+   una linea para escribir/leer texto largo con comodidad. */
+.ticket-edit-form textarea {
+    min-height: 100px;
+}
+
+/* solve_ticket.html: informacion de solo lectura del ticket, en grid con
+   columnas adaptables -- auto-fit acomoda 1-3 columnas segun el ancho
+   disponible sin necesitar breakpoints propios en escritorio/tablet. */
+.ticket-edit-form .ticket_info {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 8px 24px;
+    margin: 0 0 4px 0;
+}
+
+.ticket-edit-form .ticket_info p {
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+/* Etiqueta/valor distinguidos con HTML semantico simple (span), sin
+   introducir dl/dt/dd -- consistente con el resto de la tarjeta, que ya
+   usa <p> como contenedor de linea. */
+.ticket-edit-form .ticket_info .info_label {
+    font-weight: 600;
+    color: var(--color-text);
+    margin-right: 4px;
+}
+
+.ticket-edit-form .ticket_info .info_value {
+    color: var(--color-text);
+}
+
+.ticket-edit-form .ticket_info_full {
+    grid-column: 1 / -1;
+}
+
+/* Breakpoint propio (900px), distinto del de 768px que ya usan tabla/
+   tarjetas y las filas etiqueta/campo de form.as_p (bloque mas abajo).
+   Dos columnas de pagina (panel de ~300px + contenido flexible) necesitan
+   mas aire del que queda entre 768 y 900px, asi que aqui colapsan a una
+   sola columna antes de ese punto -- sin desbordamiento horizontal ya a
+   900px, que es el limite exacto pedido. Alcance exclusivo de
+   .ticket-edit-form (edit_ticket.html/solve_ticket.html). */
+@media (max-width: 900px) {
+    .ticket-edit-form {
+        max-width: 100%;
+    }
+
+    .ticket-edit-form .ticket_edit_layout--edit,
+    .ticket-edit-form .ticket_edit_layout--solve {
+        grid-template-columns: 1fr;
+    }
+}
+
 .table_container {
     width: 70%;
 }
@@ -784,6 +1125,59 @@ textarea {
         width: 100%;
         box-sizing: border-box;
         margin: 15px 0 0 0;
+    }
+
+    /* 4.4.6: mismo patron ya usado arriba para .create-ticket-form,
+       aplicado a los formularios form.as_p -- a 320/390/768px, los
+       inputs/selects/textarea (ancho fijo de 200px por la regla generica)
+       y el boton de guardar pasan a ancho completo de su contenedor. */
+    .as-p-form input,
+    .as-p-form select,
+    .as-p-form textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    .as-p-form .save_button {
+        width: 100%;
+        box-sizing: border-box;
+        margin: 15px 0 0 0;
+    }
+
+    /* 4.4.8 (revision): a 320/390/768px, la tarjeta de edit_ticket/
+       solve_ticket reduce su padding (el de escritorio, sumado al
+       margin:40px de .content_box, dejaba muy poco ancho util en
+       pantallas angostas); las secciones internas (.ticket_section)
+       tambien reducen su padding; la grilla de informacion de solo
+       lectura pasa a una sola columna -- evita que el piso de 240px de
+       cada columna (minmax) desborde el ancho disponible en movil; y
+       las filas etiqueta/campo de form.as_p pasan de fila (label a la
+       izquierda) a columna (label arriba, campo abajo) -- a este ancho
+       ya no hay espacio para las dos cosas lado a lado sin apretar el
+       campo. min-width:0 en la fila evita que el label fuerce
+       desbordamiento horizontal mientras dura la transicion de layout. */
+    .ticket-edit-form {
+        padding: 16px 20px;
+    }
+
+    .ticket-edit-form .ticket_section {
+        padding: 12px 16px;
+    }
+
+    .ticket-edit-form .ticket_info {
+        grid-template-columns: 1fr;
+    }
+
+    .ticket-edit-form form > p {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+
+    .ticket-edit-form form > p > label {
+        width: auto;
+        text-align: left;
     }
 }
 

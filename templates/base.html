@@ -39,8 +39,8 @@
                 {% if perms.Helpdesk.view_profile %}
                     <li class="navItem"><a href="{% url 'customers' %}">Clientes</a></li>
                 {% endif %}
-                <li class="navItem"><a href="/logout" title="Cerrar sesión">
-                    <i alt="Salir" id="logout_button" class="icons fa-solid fa-right-from-bracket"></i>
+                <li class="navItem"><a href="/logout" title="Cerrar sesión" aria-label="Cerrar sesión">
+                    <i id="logout_button" class="icons fa-solid fa-right-from-bracket" aria-hidden="true"></i>
                 </a></li>
                 {% else %}
                 <li class="navItem"><a href="{% url 'signin' %}">Iniciar sesión</a></li>

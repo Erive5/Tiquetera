@@ -37,11 +37,11 @@
                        <td>{{ type.type_description }}</td>
                        <td>
                            <form method="get" action="{% url 'edit_type' type.id %}">
-                               <button type="submit"><i class="fa-solid fa-pen"></i></button>
+                               <button type="submit" aria-label="Editar tipo {{ type.type_description }}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
                            </form>
                            <form  method="post" action="{% url 'delete_type' type.id %}">
                                {% csrf_token %}
-                               <button class="delete_button" type="submit"><i class="fa-solid fa-trash"></i></button>
+                               <button class="delete_button" type="submit" aria-label="Eliminar tipo {{ type.type_description }}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
                            </form>
                        </td>
                    </tr>

@@ -35,11 +35,11 @@
                         {% endif %}
                     </form>
                     <form id="button_box_edit" method="get" action="{% url 'edit_ticket' ticket.id %}">
-                        <button class="edit_button" type="submit"><i class="fa-solid fa-pen"></i></button>
+                        <button class="edit_button" type="submit" aria-label="Editar ticket {{ ticket.id }}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
                     </form>
                     <form id="button_box_delete" method="post" action="{% url 'delete_ticket' ticket.id %}">
                         {% csrf_token %}
-                        <button class="delete_button" type="submit"><i class="fa-solid fa-trash"></i></button>
+                        <button class="delete_button" type="submit" aria-label="Eliminar ticket {{ ticket.id }}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
                     </form>
                 </div>
                 {% endif %}

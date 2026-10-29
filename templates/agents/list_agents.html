@@ -54,7 +54,7 @@
           {% for agent in agents %}
           <tr>
             <td>
-              <a href="{% url 'agent_view' agent.id %}" title="Ver detalles agente"><i class="fa-solid fa-clipboard-list"></i></a>
+              <a href="{% url 'agent_view' agent.id %}" title="Ver detalles agente" aria-label="Ver detalles agente {{ agent.user.first_name }} {{ agent.user.last_name }}"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></a>
             </td>
             <td>{{ agent.user.first_name }}</td>
             <td>{{ agent.user.last_name }}</td>

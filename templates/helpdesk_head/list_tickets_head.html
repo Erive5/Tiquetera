@@ -85,7 +85,7 @@
           {% for ticket in tickets %}
           <tr>
             <td>
-              <a href="{% url 'ticket_view' ticket.id %}" title="Ver detalles ticket"><i class="fa-solid fa-clipboard-list"></i></a>
+              <a href="{% url 'ticket_view' ticket.id %}" title="Ver detalles ticket" aria-label="Ver detalles ticket {{ ticket.id }}"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></a>
             </td>
             <td>{{ ticket.id }}</td>
             <td>{{ ticket.priority }}</td>

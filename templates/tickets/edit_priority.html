@@ -8,9 +8,9 @@
 {% if error %}
 <p>{{ error }}</p>
 {% endif %}
-<div class="content_box">
+<div class="content_box as-p-form">
     <div class="data_container">
-        <h3>ID: {{ priority.id }}</p>
+        <h3>ID: {{ priority.id }}</h3>
         <form action="" method="post">
           {% csrf_token %}
           {{ form.as_p }}

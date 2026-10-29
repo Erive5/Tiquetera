@@ -712,11 +712,18 @@ def edit_ticket(request, id):
             create_form.save()
             ticket.save()  # Guardar el ticket actualizado
             return redirect('ticket_view', id=ticket.id)
+        # 4.4.5: antes, 'error' se armaba SIEMPRE despues de este if/else
+        # (tambien en un GET sin ningun problema real), asi que el mensaje
+        # aparecia en cada carga normal de la pantalla. Ahora solo se fija
+        # aqui, dentro de la rama de POST invalido -- los errores reales de
+        # campo los sigue mostrando create_form.as_p/closed_form.as_p sin
+        # cambios; este mensaje es un complemento general, igual que antes.
+        error = 'Hubo un problema al guardar los cambios. Revisa los errores del formulario.'
     else:
         create_form = build_create_form()
         closed_form = build_closed_form()
+        error = None
 
-    error = 'Hubo un problema al cargar el formulario'
     return render(request, 'tickets/edit_ticket.html', {'create_form': create_form, 'closed_form': closed_form, 'ticket': ticket, 'can_resolve': can_resolve, 'error': error})
 
 @login_required

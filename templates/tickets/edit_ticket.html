@@ -2,22 +2,41 @@
 {% block title %} Editar ticket {% endblock %}
 {% block content %}
 <div class="container">
-<h1>Editar Ticket </h1>
-<h4> ID : {{ ticket.id }}</h4>
-{% if error %}
-<p>{{ error }}</p>
-{% endif %}
-<form action="" method="post">
-  {% csrf_token %}
-  {{ create_form.as_p }}
-  
-  {% if closed_form %}
-  <h3>Información de Cierre</h3>
-  {% csrf_token %}
-  {{ closed_form.as_p }}
-  {% endif %}
+  <div class="content_box as-p-form ticket-edit-form">
+    <div class="ticket_edit_header">
+      <h1>Editar Ticket</h1>
+      <h4 class="ticket_id_label">ID: {{ ticket.id }}</h4>
+      <div class="ticket_edit_badges">
+        {% include "tickets/_status_badge.html" %}
+        <span class="status_badge status_badge--neutral"><i class="fa-solid fa-flag" aria-hidden="true"></i> {{ ticket.priority }}</span>
+      </div>
+    </div>
+    {% if error %}
+    <p class="form-error-message">{{ error }}</p>
+    {% endif %}
+    <div class="ticket_edit_layout ticket_edit_layout--edit">
+      <div class="ticket_edit_main">
+        <form action="" method="post">
+          {% csrf_token %}
+          {{ create_form.as_p }}
 
-  <button class="save_button" type="submit"><p><i class="fa-solid fa-floppy-disk"></i> Guardar</p></button>
-</form>
+          {% if closed_form %}
+          <h3>Información de Cierre</h3>
+          {% csrf_token %}
+          {{ closed_form.as_p }}
+          {% endif %}
+
+          <button class="save_button" type="submit"><p><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Guardar</p></button>
+        </form>
+      </div>
+
+      <div class="ticket_section ticket_context_panel">
+        <h3>Contexto</h3>
+        <p><span class="info_label">Cliente:</span> <span class="info_value">{{ ticket.customer }}</span></p>
+        <p><span class="info_label">Agente apertura:</span> <span class="info_value">{% if ticket.opening_agent %}{{ ticket.opening_agent }}{% else %}—{% endif %}</span></p>
+        <p><span class="info_label">Fecha apertura:</span> <span class="info_value">{{ ticket.opening_date }}</span></p>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}

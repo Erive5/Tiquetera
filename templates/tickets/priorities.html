@@ -36,11 +36,11 @@
                        <td>{{ priority.priority_description }}</td>
                        <td>
                            <form method="get" action="{% url 'edit_priority' priority.id %}">
-                               <button type="submit"><i class="fa-solid fa-pen"></i></button>
+                               <button type="submit" aria-label="Editar prioridad {{ priority.priority_description }}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
                            </form>
                            <form  method="post" action="{% url 'delete_priority' priority.id %}">
                                {% csrf_token %}
-                               <button class="delete_button" type="submit"><i class="fa-solid fa-trash"></i></button>
+                               <button class="delete_button" type="submit" aria-label="Eliminar prioridad {{ priority.priority_description }}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
                            </form>
                    </tr>
                    {% endfor %}

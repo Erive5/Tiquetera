@@ -45,7 +45,7 @@
           {% for customer in customers %}
           <tr>
             <td>
-              <a href="{% url 'customer_view' customer.id %}" title="Ver detalles cliente"><i class="fa-solid fa-clipboard-list"></i></a>
+              <a href="{% url 'customer_view' customer.id %}" title="Ver detalles cliente" aria-label="Ver detalles cliente {{ customer.user.first_name }} {{ customer.user.last_name }}"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i></a>
             </td>
             <td>{{ customer.user.first_name }}</td>
             <td>{{ customer.user.last_name }}</td>

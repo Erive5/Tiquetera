@@ -36,11 +36,11 @@
                        <td>{{ status.id }}</td>
                        <td>{{ status.status_description }}</td>
                        <td> <form method="get" action="{% url 'edit_status' status.id %}">
-                           <button type="submit"><i class="fa-solid fa-pen"></i></button>
+                           <button type="submit" aria-label="Editar estado {{ status.status_description }}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
                        </form>
                        <form  method="post" action="{% url 'delete_status' status.id %}">
                            {% csrf_token %}
-                           <button class="delete_button" type="submit"><i class="fa-solid fa-trash"></i></button>
+                           <button class="delete_button" type="submit" aria-label="Eliminar estado {{ status.status_description }}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
                        </form>
                    </tr>
                    {% endfor %}

@@ -6,7 +6,7 @@
     <div class="title">
         <h1>Completar perfil </h1> 
     </div>
-    <div class="content_box register-form">
+    <div class="content_box register-form auth-form">
         <div class="data_container">
             <div class="user_info_container">
                 <h3 class="title_info">Tu Usuario</h3>
@@ -15,21 +15,32 @@
                 <p class="paragraph">Nombre: {{ user_data.first_name }} {{ user_data.last_name }}</p>
                 <hr>
                 <h3 class="title_info">Datos personales</h3>
-                {% if error %}
-                    <p>{{ error }}</p>
-                {% endif %}
+                {% comment %}
+                4.4.4: se retira el {% if error %} que existia aqui -- en
+                views.py (agent_complete_profile), esa variable es SIEMPRE
+                el mismo string fijo ("Por favor, ingresa datos
+                válidos"), SIEMPRE junto al form invalido real (nunca
+                sola, nunca con otro contenido). No agregaba ninguna
+                informacion que no este ya en los errores reales de
+                form/campo que ahora se muestran abajo. No se toco
+                views.py: solo se dejo de leer esa variable en el
+                template.
+                {% endcomment %}
                 <p> Por favor, completa los siguientes campos para concretar tu registro</p>
                 <form method="post">
                     {% csrf_token %}
+                    {{ form.non_field_errors }}
                     <div class="form-group">
                         {{ form.phone.label_tag }}
                         {{ form.phone }}
+                        {{ form.phone.errors }}
                     </div>
                    <div class="form-group">
                         {{ form.area.label_tag }}
                         {{ form.area }}
+                        {{ form.area.errors }}
                     </div>
-                    <button>
+                    <button type="submit">
                         Continuar
                     </button>
                 </form> 

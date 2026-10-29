@@ -36,12 +36,12 @@
             <td>{{ area.area_description }}</td>
             <td>
               <form method="get" action="{% url 'edit_area' area.id %}">
-                <button type="submit"><i class="fa-solid fa-pen"></i></button>
+                <button type="submit" aria-label="Editar área {{ area.area_description }}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
               </form>
               <form method="post" action="{% url 'delete_area' area.id %}">
                 {% csrf_token %}
-                <button class="delete_button" type="submit">
-                  <i class="fa-solid fa-trash"></i>
+                <button class="delete_button" type="submit" aria-label="Eliminar área {{ area.area_description }}">
+                  <i class="fa-solid fa-trash" aria-hidden="true"></i>
                 </button>
               </form>
             </td>

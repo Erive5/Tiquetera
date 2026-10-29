@@ -3,31 +3,40 @@
 
 {% block content %}
 <div class="container">
-    {{ error }}
-<h1>
-    Resolución ticket
-</h1>
+  <div class="content_box as-p-form ticket-edit-form">
+    <div class="ticket_edit_header">
+      <h1>#{{ ticket.id }} — {{ ticket.issue }}</h1>
+      <div class="ticket_edit_badges">
+        {% include "tickets/_status_badge.html" %}
+        <span class="status_badge status_badge--neutral"><i class="fa-solid fa-flag" aria-hidden="true"></i> {{ ticket.priority }}</span>
+      </div>
+    </div>
+    {% if error %}
+    <p class="form-error-message">{{ error }}</p>
+    {% endif %}
 
-<h3>Información ticket </h3>
+    <div class="ticket_edit_layout ticket_edit_layout--solve">
+      <div class="ticket_section ticket_context_panel">
+        <div class="ticket_info">
+        <p><span class="info_label">Fecha apertura:</span> <span class="info_value">{{ ticket.opening_date }}</span></p>
+        <p><span class="info_label">Agente apertura:</span> <span class="info_value">{% if ticket.opening_agent %}{{ ticket.opening_agent }}{% else %}—{% endif %}</span></p>
+        <p><span class="info_label">Prioridad:</span> <span class="info_value">{{ ticket.priority }}</span></p>
+        <p><span class="info_label">Tipo:</span> <span class="info_value">{{ ticket.type }}</span></p>
+        <p><span class="info_label">Cliente:</span> <span class="info_value">{{ticket.customer}}</span></p>
+        <p class="ticket_info_full"><span class="info_label">Observación:</span> <span class="info_value">{{ ticket.observation }}</span></p>
+        <p><span class="info_label">Área derivación:</span> <span class="info_value">{{ ticket.asigned_area }}</span></p>
+        </div>
+      </div>
 
-<p>Id: {{ ticket.id }}</p>
-<p>Asunto: {{ ticket.issue }}</p>
-<p>Fecha apertura: {{ ticket.opening_date }}</p>
-<p>Agente apertura: {{ ticket.opening_agent }}</p>
-<p>Prioridad: {{ ticket.priority }}</p>
-<p>Tipo: {{ ticket.type }}</p>
-<p>Cliente: {{ticket.customer}} </p>
-<p>Observación: {{ ticket.observation }}</p>
-<p>Área derivación: {{ ticket.asigned_area }}</p>
-<p>Estado: {{ ticket.status }}</p>
-
-<h3>Resolución</h3>
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button>
-        Resolver
-    </button>
-</form> 
+      <div class="ticket_edit_main">
+        <h3>Resolución</h3>
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <button class="save_button" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Resolver</button>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
