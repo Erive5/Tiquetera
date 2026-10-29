@@ -1,0 +1,5 @@
+{# Filtro de fecha + botón "Filtrar", compartidos por ambos listados.
+   Incluido dentro de .input_container. Conserva la fecha seleccionada
+   tras enviar el formulario. #}
+<input type="date" name="specific_date" placeholder="Fecha específica" value="{{ request.GET.specific_date }}">
+<button class="filter_button" type="submit"><p><i class="fa-solid fa-magnifying-glass"></i> Filtrar</p></button>

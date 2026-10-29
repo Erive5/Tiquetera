@@ -658,6 +658,38 @@ button p {
     color: var(--color-primary);
 }
 
+/* 4.3A (cierre): enlace semantico "Crear ticket" en los listados de
+   Cliente y Agente/Jefe de Mesa. Reemplaza el patron invalido
+   <button><a>...</a></button> por <a class="create_button">; estas
+   reglas reproducen el mismo aspecto visual que tenia dentro de
+   <button> (box model, colores, hover, tipografia e icono) para no
+   rediseñar el componente, solo corregir su semantica HTML. */
+a.create_button {
+    box-sizing: border-box;
+    display: inline-block;
+    background-image: linear-gradient(to bottom, var(--color-spacecadet), var(--color-spacecadet2));
+    border-radius: 15px;
+    border-color: var(--color-primary);
+    color: var(--color-smokehwhite);
+    border: 1px solid var();
+    margin: 15px;
+    padding: 8px;
+    width: 200px;
+    text-align: center;
+    text-decoration: none;
+    font-family: 'MiParrafo';
+    font-weight: 400;
+    font-size: 18px;
+}
+
+a.create_button:hover {
+    background-image: linear-gradient(to bottom, var(--color-spacecadet), var(--color-secondary));
+}
+
+a.create_button i {
+    font-size: 18px;
+}
+
 #logout_button {
     font-size: 30px;
 }

@@ -3389,3 +3389,333 @@ class AgentCompleteProfileAdditionalTests(TestCase):
         # Los datos originales no se sobreescriben.
         self.assertEqual(profile.rut, "9-3")
         self.assertEqual(profile.phone, "930")
+
+
+# ---------------------------------------------------------------------------
+# Incremento 4.3A: persistencia de filtros GET en el listado de tickets, y
+# acceso "Crear ticket" para Cliente en list_tickets_customer.html.
+# ---------------------------------------------------------------------------
+
+class TicketListFiltersGetPersistenceTests(TestCase):
+    """Brecha de cobertura real detectada en el cierre de 4.3A: ningun test
+    existente ejercia los parametros GET de los filtros (ni los de
+    apply_filters/apply_dropdown_filters en views.py, ni el nuevo atributo
+    `selected`/`value` agregado en los templates). Estos tests confirman que
+    lo que el template marca como seleccionado/con value coincide
+    exactamente con lo que apply_filters realmente usa para filtrar (mismos
+    nombres de parametro GET), no solo que la pagina responde 200.
+
+    Nota: Ticket.opening_date es auto_now_add (siempre "hoy"), por lo que
+    specific_date no se puede usar para probar selectividad de filtrado en
+    estos tests (ambos tickets de prueba comparten la misma fecha de
+    creacion). Para specific_date/opening_agent/closure_agent se verifica
+    solo que el valor enviado se refleja correctamente en el `value=` del
+    campo, por separado de la prueba de coincidencia con el filtrado real
+    (que si se verifica, de punta a punta, con los 4 selects de catalogo:
+    priority/type/status/area, que filtran por igualdad exacta de FK)."""
+
+    def setUp(self):
+        call_command("seed_roles")
+        self.priority = Priority.objects.create(priority_description="Alta-43a")
+        self.other_priority = Priority.objects.create(priority_description="Baja-43a")
+        self.type = Type.objects.create(type_description="Consulta-43a")
+        self.other_type = Type.objects.create(type_description="Problema-43a")
+        self.status = Status.objects.create(status_description="A resolución-43a")
+        self.other_status = Status.objects.create(status_description="Resuelto-43a")
+        self.area = Area.objects.create(area_description="Soporte-43a")
+        self.other_area = Area.objects.create(area_description="Ventas-43a")
+
+    def _jefe(self):
+        user = User.objects.create_user(username="jefe_filtros_43a@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43-1", phone="431")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def _cliente(self, suffix="2"):
+        user = User.objects.create_user(username="cliente_filtros_43a_%s@test.cl" % suffix, password="x")
+        profile = Profile.objects.create(user=user, rut="43-%s" % suffix, phone="43%s" % suffix)
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def test_jefe_de_mesa_filtros_de_catalogo_persisten_y_coinciden_con_lo_filtrado(self):
+        # Todo ticket requiere un customer (FK obligatoria) incluso cuando
+        # el que filtra es Jefe de Mesa/Agente -- se usa un Cliente
+        # cualquiera como dueño de ambos tickets de prueba.
+        _, cliente_profile = self._cliente("own")
+        jefe_user, _ = self._jefe()
+        matching = Ticket.objects.create(
+            issue="Ticket que SI debe coincidir", priority=self.priority, type=self.type,
+            status=self.status, asigned_area=self.area, customer=cliente_profile, observation="o",
+        )
+        non_matching = Ticket.objects.create(
+            issue="Ticket que NO debe coincidir", priority=self.other_priority, type=self.other_type,
+            status=self.other_status, asigned_area=self.other_area, customer=cliente_profile, observation="o",
+        )
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("tickets"), {
+            "priority": self.priority.id,
+            "type": self.type.id,
+            "status": self.status.id,
+            "area": self.area.id,
+        })
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+
+        # El filtrado real (apply_dropdown_filters) devuelve solo el ticket
+        # que coincide con los 4 filtros de catalogo -- confirma que los
+        # parametros que persisten en la UI son los mismos que de verdad
+        # filtran, no solo que "se ven marcados".
+        self.assertIn(matching.issue, content)
+        self.assertNotIn(non_matching.issue, content)
+
+        # Los 4 selects de catalogo muestran "selected" en la opcion
+        # correcta y NO en la otra opcion (sin falsos positivos).
+        # Se compara la opcion completa (id + descripcion), no solo el id,
+        # porque Priority/Type/Status/Area son secuencias autoincrementales
+        # independientes y sus ids pueden coincidir entre si.
+        self.assertIn('value="%s" selected>%s</option>' % (self.priority.id, self.priority.priority_description), content)
+        self.assertNotIn('value="%s" selected>%s</option>' % (self.other_priority.id, self.other_priority.priority_description), content)
+        self.assertIn('value="%s" selected>%s</option>' % (self.type.id, self.type.type_description), content)
+        self.assertNotIn('value="%s" selected>%s</option>' % (self.other_type.id, self.other_type.type_description), content)
+        self.assertIn('value="%s" selected>%s</option>' % (self.status.id, self.status.status_description), content)
+        self.assertNotIn('value="%s" selected>%s</option>' % (self.other_status.id, self.other_status.status_description), content)
+        self.assertIn('value="%s" selected>%s</option>' % (self.area.id, self.area.area_description), content)
+        self.assertNotIn('value="%s" selected>%s</option>' % (self.other_area.id, self.other_area.area_description), content)
+
+    def test_jefe_de_mesa_campos_de_texto_y_fecha_reflejan_el_value_enviado(self):
+        # opening_agent/closure_agent/specific_date no son <select>: se
+        # verifica que el `value=` del input coincide con lo enviado por
+        # GET (mismos nombres que lee apply_opening_agent_filter /
+        # apply_closure_agent_filter / apply_specific_date_filter).
+        # Nota: list_tickets_head.html solo renderiza el <form> de filtros
+        # dentro de `{% if tickets %}` -- sin ningun ticket en el queryset
+        # (ya filtrado) el formulario completo no aparece. Se crea un
+        # ticket que no sea excluido por ningun filtro de este test
+        # (ninguno de los 3 aqui probados afecta a este ticket porque
+        # opening_agent/closure_agent son None y el valor de busqueda no
+        # calza con nada -> apply_opening_agent_filter/apply_closure_agent_filter
+        # dejarian vacio el queryset). Por eso aqui se prueba el `value=`
+        # solo con specific_date (que no excluye al ticket recien creado,
+        # ya que coincide con la fecha de apertura real de hoy).
+        _, cliente_profile = self._cliente("txt")
+        from django.utils import timezone
+        Ticket.objects.create(
+            issue="Ticket para formulario de texto/fecha", priority=self.priority, type=self.type,
+            status=self.status, customer=cliente_profile, observation="o",
+        )
+        jefe_user, _ = self._jefe()
+        self.client.force_login(jefe_user)
+        today = timezone.now().date().isoformat()
+        resp = self.client.get(reverse("tickets"), {"specific_date": today})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('value="%s"' % today, content)
+
+        # opening_agent/closure_agent filtran por icontains sobre el
+        # first_name/last_name del agente -- se crea un ticket cuyo agente
+        # de apertura/cierre calza exactamente con el texto buscado, para
+        # que el ticket (y por lo tanto el <form>) siga visible.
+        opening_user = User.objects.create_user(username="agente_apertura_43a@test.cl", password="x", first_name="Carlos Pérez")
+        opening_agent_profile = Profile.objects.create(user=opening_user, rut="43-oa", phone="430")
+        set_user_role_group(opening_user, ROLE_AGENTE)
+        closure_user = User.objects.create_user(username="agente_cierre_43a@test.cl", password="x", first_name="Ana Soto")
+        closure_agent_profile = Profile.objects.create(user=closure_user, rut="43-ca", phone="431")
+        set_user_role_group(closure_user, ROLE_AGENTE)
+        _, cliente_profile2 = self._cliente("txt2")
+        Ticket.objects.create(
+            issue="Ticket con agentes de apertura/cierre", priority=self.priority, type=self.type,
+            status=self.status, customer=cliente_profile2, opening_agent=opening_agent_profile,
+            closure_agent=closure_agent_profile, observation="o",
+        )
+        resp2 = self.client.get(reverse("tickets"), {
+            "opening_agent": "Carlos Pérez",
+            "closure_agent": "Ana Soto",
+        })
+        self.assertEqual(resp2.status_code, 200)
+        content2 = resp2.content.decode()
+        self.assertIn('value="Carlos Pérez"', content2)
+        self.assertIn('value="Ana Soto"', content2)
+
+    def test_jefe_de_mesa_sin_filtros_ningun_option_marcado(self):
+        # Control: sin querystring, ningun <option> debe llevar "selected"
+        # (evita que el if del template marque algo por defecto).
+        jefe_user, _ = self._jefe()
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertNotIn('value="%s" selected' % self.priority.id, content)
+        self.assertNotIn('value="%s" selected' % self.type.id, content)
+        self.assertNotIn('value="%s" selected' % self.status.id, content)
+        self.assertNotIn('value="%s" selected' % self.area.id, content)
+
+    def test_cliente_filtros_compartidos_persisten_y_coinciden_con_lo_filtrado(self):
+        # list_tickets_customer.html solo tiene type/status/specific_date
+        # (sin priority/area/ejecutivos) -- se confirma que el partial
+        # compartido funciona igual en este template, y que type/status
+        # (igualdad exacta de FK) realmente seleccionan el ticket correcto.
+        cliente_user, cliente_profile = self._cliente()
+        matching = Ticket.objects.create(
+            issue="Ticket cliente que SI coincide", priority=self.priority, type=self.type,
+            status=self.status, customer=cliente_profile, observation="o",
+        )
+        non_matching = Ticket.objects.create(
+            issue="Ticket cliente que NO coincide", priority=self.priority, type=self.other_type,
+            status=self.other_status, customer=cliente_profile, observation="o",
+        )
+        self.client.force_login(cliente_user)
+        resp = self.client.get(reverse("tickets"), {
+            "type": self.type.id,
+            "status": self.status.id,
+        })
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn(matching.issue, content)
+        self.assertNotIn(non_matching.issue, content)
+        self.assertIn('value="%s" selected' % self.type.id, content)
+        self.assertNotIn('value="%s" selected' % self.other_type.id, content)
+        self.assertIn('value="%s" selected' % self.status.id, content)
+        self.assertNotIn('value="%s" selected' % self.other_status.id, content)
+        # Cliente nunca ve estos filtros -- no deben aparecer en absoluto.
+        self.assertNotIn('name="priority"', content)
+        self.assertNotIn('name="area"', content)
+        self.assertNotIn('name="opening_agent"', content)
+        self.assertNotIn('name="closure_agent"', content)
+
+    def test_cliente_campo_de_fecha_refleja_el_value_enviado(self):
+        # Igual que en el caso de Jefe de Mesa: el <form> de filtros solo
+        # se renderiza con `{% if tickets %}`, asi que se necesita un
+        # ticket que la fecha de hoy no excluya.
+        from django.utils import timezone
+        cliente_user, cliente_profile = self._cliente()
+        Ticket.objects.create(
+            issue="Ticket cliente para formulario de fecha", priority=self.priority, type=self.type,
+            status=self.status, customer=cliente_profile, observation="o",
+        )
+        self.client.force_login(cliente_user)
+        today = timezone.now().date().isoformat()
+        resp = self.client.get(reverse("tickets"), {"specific_date": today})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('value="%s"' % today, content)
+
+
+class CustomerCreateTicketAccessTests(TestCase):
+    """4.3A: el listado de Cliente ahora muestra "Crear ticket" condicionado
+    a perms.Helpdesk.add_ticket. Confirma el caso real (Cliente siempre
+    tiene este permiso via el grupo RBAC) y el caso negativo (si el permiso
+    no estuviera, el enlace tampoco deberia estarlo), en vez de asumir que
+    el guard funciona solo porque los Clientes reales siempre lo tienen."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _cliente(self):
+        user = User.objects.create_user(username="cliente_ct_43a@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut="43-3", phone="433")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def test_cliente_con_permiso_ve_el_enlace_crear_ticket(self):
+        user, _ = self._cliente()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('href="%s"' % reverse("create_ticket"), content)
+
+    def test_cliente_con_permiso_ve_el_enlace_en_estado_vacio(self):
+        # Sin tickets creados todavia -> rama "no hay tickets" del template.
+        user, _ = self._cliente()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("No hay tickets asociados a su cuenta", content)
+        self.assertIn('href="%s"' % reverse("create_ticket"), content)
+
+    def test_sin_permiso_add_ticket_el_enlace_no_aparece(self):
+        # Caso negativo real: se retira add_ticket del grupo Cliente (no
+        # ocurre en producción -- seed_roles lo asigna siempre -- pero
+        # prueba que el guard del template depende de verdad del permiso,
+        # no solo de "estar logueado como Cliente").
+        user, _ = self._cliente()
+        cliente_group = Group.objects.get(name=ROLE_CLIENTE)
+        add_ticket_perm = Permission.objects.get(codename="add_ticket", content_type__app_label="Helpdesk")
+        cliente_group.permissions.remove(add_ticket_perm)
+
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertNotIn('href="%s"' % reverse("create_ticket"), content)
+
+    def test_enlace_apunta_a_la_url_correcta_de_create_ticket(self):
+        user, _ = self._cliente()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        href = reverse("create_ticket")
+        self.assertIn(href, resp.content.decode())
+        # El enlace realmente funciona para Cliente (ya cubierto en
+        # CreateTicketAuthorizationTests, se confirma aqui el GET puntual).
+        resp_form = self.client.get(href)
+        self.assertEqual(resp_form.status_code, 200)
+
+
+class HeadCreateTicketAccessTests(TestCase):
+    """Correccion de cierre de 4.3A: list_tickets_head.html (Jefe de
+    Mesa/Administrador y Agente) ahora condiciona "Crear ticket" a
+    perms.Helpdesk.add_ticket, igual que list_tickets_customer.html.
+    Antes de esta correccion el enlace era incondicional en este template.
+    Jefe de Mesa y Agente tienen add_ticket por defecto via seed_roles, asi
+    que el caso negativo real se prueba retirando el permiso del grupo,
+    igual que ya se hizo para Cliente en CustomerCreateTicketAccessTests."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _jefe(self):
+        user = User.objects.create_user(username="jefe_ct_head_43a@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43-h1", phone="43h1")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def test_jefe_de_mesa_con_permiso_ve_el_enlace_crear_ticket(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('href="%s"' % reverse("create_ticket"), content)
+
+    def test_sin_permiso_add_ticket_el_enlace_no_aparece_para_jefe_de_mesa(self):
+        user, profile = self._jefe()
+        # Necesita al menos un ticket para que el bloque de filtros/acciones
+        # se renderice ({% if tickets %} envuelve todo ese bloque).
+        _, cliente_profile = self._cliente_para_ticket()
+        priority = Priority.objects.create(priority_description="Alta-43a-head")
+        type_ = Type.objects.create(type_description="Consulta-43a-head")
+        status = Status.objects.create(status_description="A resolución-43a-head")
+        Ticket.objects.create(
+            issue="Ticket para probar guard de Jefe de Mesa", priority=priority, type=type_,
+            status=status, customer=cliente_profile, observation="o",
+        )
+
+        jefe_group = Group.objects.get(name=ROLE_JEFE_DE_MESA)
+        add_ticket_perm = Permission.objects.get(codename="add_ticket", content_type__app_label="Helpdesk")
+        jefe_group.permissions.remove(add_ticket_perm)
+
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertNotIn('href="%s"' % reverse("create_ticket"), content)
+        # El resto del listado (tabla, filtros) sigue intacto -- el guard
+        # solo afecta al enlace, no al acceso al listado ni a sus filtros.
+        self.assertIn("Ticket para probar guard de Jefe de Mesa", content)
+
+    def _cliente_para_ticket(self):
+        user = User.objects.create_user(username="cliente_ct_head_43a@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut="43-h2", phone="43h2")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile

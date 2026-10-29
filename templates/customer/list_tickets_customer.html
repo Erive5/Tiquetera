@@ -13,27 +13,17 @@
     <div class="filters_container">
       <p>Opciones de filtrado</p> 
       <div class="select_container">
-        <select name="type">
-          <option value="">Tipo</option>
-          {% for type in types %}
-          <option value="{{ type.id }}">{{ type.type_description }}</option>
-          {% endfor %}
-        </select>
-        
-        <select name="status">
-          <option value="">Estado</option>
-          {% for status in statuses %}
-          <option value="{{ status.id }}">{{ status.status_description }}</option>
-          {% endfor %}
-        </select>
+        {% include "tickets/_ticket_filters_shared_selects.html" %}
       </div> <!-- select container end-->
 
       <div class="input_container">
-          <input type="date" name="specific_date" placeholder="Fecha específica">
-          <button class="filter_button" type="submit"><p><i class="fa-solid fa-magnifying-glass"></i> Filtrar</p></button>
+          {% include "tickets/_ticket_filters_shared_tail.html" %}
       </div> <!-- input container end-->
     </div>  <!-- filters container end -->
   </form>
+    {% if perms.Helpdesk.add_ticket %}
+    <a class="create_button" href="{% url 'create_ticket' %}"><i class="fa-solid fa-plus"></i> Crear ticket</a>
+    {% endif %}
       <table class="ticket_table">
         <thead>
           <tr>
@@ -78,6 +68,9 @@
       <h3>No hay tickets asociados a su cuenta</h3>
       <i class="fa-solid fa-face-dizzy"></i>
       <br>
+      {% if perms.Helpdesk.add_ticket %}
+      <a class="create_button" href="{% url 'create_ticket' %}"><i class="fa-solid fa-plus"></i> Crear ticket</a>
+      {% endif %}
     </div> <!-- no tickets container end-->
     {% endif %}
   </div><!-- content box end -->
