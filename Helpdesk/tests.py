@@ -7,7 +7,7 @@ from django.core.management.base import CommandError
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from Helpdesk.forms import agent_profile_form, customer_profile_form, opened_ticket_form
+from Helpdesk.forms import agent_profile_form, customer_profile_form, opened_ticket_form, customer_creation_form
 from Helpdesk.models import Profile
 from Helpdesk.rbac import (
     BUSINESS_ROLE_GROUPS,
@@ -4484,3 +4484,110 @@ class TicketListMobileCardsAndFiltersToggleTests(TestCase):
         resp = self.client.get(reverse("tickets"))
         content = resp.content.decode()
         self.assertNotIn("{#", content)
+
+
+class AgentSignupFormUxTests(TestCase):
+    # 4.4.2: agent_signup.html gana renderizado de errores por campo y de
+    # form.non_field_errors (dentro de <form>), reutilizando .auth-form
+    # (ya usada por customer_signup.html y signin.html) para tipografia,
+    # colores y responsive. No se tocaron views.py, forms.py ni permisos.
+    VALID_PASSWORD = "Cu3nta$ecura99"
+
+    def setUp(self):
+        call_command("seed_roles")
+        self.jefe = User.objects.create_user(username="jefe_4_4_2@test.cl", password="x")
+        set_user_role_group(self.jefe, ROLE_JEFE_DE_MESA)
+
+    def _post(self, **overrides):
+        data = {
+            "username": "agente_4_4_2@test.cl",
+            "password1": self.VALID_PASSWORD,
+            "password2": self.VALID_PASSWORD,
+            "first_name": "A",
+            "last_name": "B",
+        }
+        data.update(overrides)
+        self.client.force_login(self.jefe)
+        return self.client.post(reverse("agent_signup"), data)
+
+    def test_formulario_conserva_register_form_y_agrega_auth_form(self):
+        self.client.force_login(self.jefe)
+        resp = self.client.get(reverse("agent_signup"))
+        self.assertContains(resp, 'class="content_box register-form auth-form"')
+
+    def test_boton_registrar_se_conserva_sin_envoltorio_p(self):
+        self.client.force_login(self.jefe)
+        resp = self.client.get(reverse("agent_signup"))
+        self.assertContains(resp, '<button type="submit">Registrar</button>')
+
+    def test_post_invalido_por_password_no_coincide_muestra_error_de_campo(self):
+        # 4.4.2: antes de este incremento el formulario no mostraba NINGUN
+        # error (ni de campo ni general); un password2 que no coincide
+        # devolvia 200 sin ningun indicio visible del motivo.
+        resp = self._post(password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="agente_4_4_2@test.cl").exists())
+        content = resp.content.decode()
+        form_open = content.index("<form")
+        form_close = content.index("</form>", form_open)
+        errorlist_idx = content.index("errorlist", form_open)
+        self.assertTrue(form_open < errorlist_idx < form_close)
+
+    def test_post_invalido_por_username_duplicado_muestra_error_de_campo(self):
+        self._post()
+        resp = self._post()
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("username", resp.context["form"].errors)
+        content = resp.content.decode()
+        form_open = content.index("<form")
+        form_close = content.index("</form>", form_open)
+        errorlist_idx = content.index("errorlist", form_open)
+        self.assertTrue(form_open < errorlist_idx < form_close)
+
+    def test_non_field_errors_se_renderiza_dentro_del_elemento_form(self):
+        # customer_creation_form no tiene hoy un clean() que agregue un
+        # error general (__all__): sus errores reales son siempre de
+        # campo (username, password2). Para verificar que
+        # form.non_field_errors quedo bien ubicado DENTRO de <form> (y no
+        # repetir el error de 4.4.1, donde quedo fuera), se fuerza un
+        # error general via una subclase de prueba, sustituyendo
+        # unicamente la referencia que usa la vista durante este POST
+        # (no se modifica Helpdesk/forms.py ni Helpdesk/views.py).
+        class _FormConErrorGeneralForzado(customer_creation_form):
+            def clean(self):
+                cleaned_data = super().clean()
+                self.add_error(None, "Error general forzado para prueba 4.4.2")
+                return cleaned_data
+
+        self.client.force_login(self.jefe)
+        with patch("Helpdesk.views.customer_creation_form", _FormConErrorGeneralForzado):
+            resp = self.client.post(reverse("agent_signup"), {
+                "username": "agente_4_4_2_nfe@test.cl",
+                "password1": self.VALID_PASSWORD,
+                "password2": self.VALID_PASSWORD,
+                "first_name": "A",
+                "last_name": "B",
+            })
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="agente_4_4_2_nfe@test.cl").exists())
+        content = resp.content.decode()
+        form_open = content.index("<form")
+        errorlist = content.index("errorlist nonfield", form_open)
+        form_close = content.index("</form>", form_open)
+        self.assertTrue(form_open < errorlist < form_close)
+
+    def test_permiso_register_agent_sigue_siendo_obligatorio(self):
+        # 4.4.2 no toca vistas, formularios Python ni permisos: un usuario
+        # sin el permiso register_agent debe seguir recibiendo 403 sin
+        # crear nada, igual que antes de este incremento.
+        attacker = User.objects.create_user(username="sin_permiso_4_4_2@test.cl", password="x")
+        self.client.force_login(attacker)
+        resp = self.client.post(reverse("agent_signup"), {
+            "username": "nuevo_agente_4_4_2@test.cl",
+            "password1": self.VALID_PASSWORD,
+            "password2": self.VALID_PASSWORD,
+            "first_name": "A",
+            "last_name": "B",
+        })
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(User.objects.filter(username="nuevo_agente_4_4_2@test.cl").exists())

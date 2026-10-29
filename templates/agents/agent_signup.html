@@ -5,31 +5,46 @@
     <div class="title">
         <h1> Registro Agente </h1>
     </div>
-    <div class="content_box register-form">
+    <div class="content_box register-form auth-form">
         <div class="data_container">
-            {% if error %}
-                <p>{{ error }}</p>
-            {% endif %}
+            {% comment %}
+            4.4.2: se retira el {% if error %} que existia aqui -- en
+            views.py (agent_signup) esa variable se arma SIEMPRE uniendo
+            TODOS los mensajes de form.errors (los de cada campo y los
+            generales) en un solo parrafo, y SIEMPRE junto al form invalido
+            real (nunca sola, nunca con otro contenido). Ahora que los
+            errores reales se muestran junto a cada campo
+            (form.<campo>.errors) y los generales con
+            form.non_field_errors, seguir mostrando "error" duplicaria el
+            mismo texto dos veces. No se toco views.py: solo se dejo de leer
+            esa variable en el template.
+            {% endcomment %}
             <form method="post">
                 {% csrf_token %}
+                {{ form.non_field_errors }}
                 <div class="form-group">
                     {{ form.username.label_tag }}
+                    {{ form.username.errors }}
                     {{ form.username }}
                 </div>
                 <div class="form-group">
                     {{ form.password1.label_tag }}
+                    {{ form.password1.errors }}
                     {{ form.password1 }}
                 </div>
                 <div class="form-group">
                     {{ form.password2.label_tag }}
+                    {{ form.password2.errors }}
                     {{ form.password2 }}
                 </div>
                 <div class="form-group">
                     {{ form.first_name.label_tag }}
+                    {{ form.first_name.errors }}
                     {{ form.first_name }}
                 </div>
                 <div class="form-group">
                     {{ form.last_name.label_tag }}
+                    {{ form.last_name.errors }}
                     {{ form.last_name }}
                 </div>
                 <button type="submit">Registrar</button>
