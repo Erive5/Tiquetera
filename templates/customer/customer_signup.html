@@ -8,12 +8,22 @@
     </div>
     <div class="content_box register-form auth-form">
         <div class="data_container">
-                {% if error %}
-                    <p>{{ error }}</p>
-                {% endif %}
-                {{ form.non_field_errors }}
+                {% comment %}
+                4.4.3: se retira el {% if error %} que existia aqui -- en
+                views.py (customer_signup) esa vista NUNCA pasa una clave
+                "error" al contexto, ni en GET ni en POST invalido (solo
+                pasa "form"). La condicion nunca fue verdadera: era codigo
+                muerto. No se toco views.py: solo se dejo de leer esa
+                variable en el template.
+
+                form.non_field_errors se mueve dentro de <form>, justo
+                despues de csrf_token (quedaba fuera de <form>, mismo bug
+                ya corregido en create_ticket.html en 4.4.1 y evitado desde
+                el inicio en agent_signup.html en 4.4.2).
+                {% endcomment %}
                 <form method="post">
                     {% csrf_token %}
+                    {{ form.non_field_errors }}
                     <div class="form-group">
                         {{ form.username.label_tag }}
                         {{ form.username.errors }}

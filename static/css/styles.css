@@ -377,6 +377,94 @@ textarea {
     font-family: 'MiParrafo';
 }
 
+/* 4.4.3: los errores de campo (customer_signup.html/agent_signup.html) y
+   el mensaje de error de login (signin.html) necesitan su propia linea
+   dentro de .form-group, en vez de comprimirse junto a la etiqueta y el
+   control -- mismo problema ya resuelto en .create-ticket-form (4.4.1).
+   Estilos de contenido compartidos por los dos casos (error de campo,
+   dentro de .form-group, y form.non_field_errors / el <p> de login,
+   fuera de .form-group); el posicionamiento de cada uno se resuelve mas
+   abajo. */
+.auth-form .errorlist {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.auth-form .errorlist li {
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger-text);
+    border-radius: 8px;
+    padding: 4px 10px;
+    margin-top: 4px;
+    font-size: 14px;
+}
+
+/* 4.4.3 (correccion): el primer intento (flex-wrap + flex-basis:100% +
+   order en .form-group, mas un max-width "de seguridad" en <form>) no
+   funcionaba. Causa real: <form> (customer_signup.html/agent_signup.html)
+   y .form_card (signin.html) son ITEMS de un contenedor flex
+   (.data_container), sin ancho propio -- su ancho se calcula por su
+   contenido (shrink-to-fit). Con .form-group en flex-wrap, el calculo de
+   ancho "max-content" de una fila multi-linea SUMA el ancho sin quebrar
+   de todos sus items -- incluido el texto del error, aunque termine
+   mostrandose en su propia linea -- lo que inflaba el ancho de
+   <form>/.form_card (y por lo tanto el de TODOS los campos, no solo el
+   que tiene el error) cada vez que aparecia un mensaje de validacion. Un
+   max-width solo ponia un techo mas alto, pero igual permitia ese
+   ensanchamiento por debajo del techo -- no resolvia el problema, solo lo
+   acotaba.
+
+   Solucion real: sacar el errorlist del calculo de ancho del todo. En vez
+   de que sea un item mas de .form-group (flex), se posiciona debajo de la
+   fila con position:absolute -- un elemento con posicion absoluta no
+   participa en el calculo de ancho de su contenedor flex, sin importar
+   cuanto texto tenga. .form-group ya no necesita flex-wrap (vuelve a
+   tener exactamente los mismos 2 items -- etiqueta y campo -- haya o no
+   error), asi que <form>/.form_card quedan con el mismo ancho con o sin
+   mensajes visibles. El unico costo es reservar espacio vertical para el
+   mensaje (si no, taparia la fila siguiente): se hace con
+   :has(.errorlist), asi que una fila sin error no cambia en nada. */
+.auth-form .form-group {
+    position: relative;
+}
+
+.auth-form .form-group:has(.errorlist) {
+    margin-bottom: 48px;
+}
+
+.auth-form .form-group .errorlist {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+}
+
+/* form.non_field_errors (customer_signup.html) se renderiza dentro de
+   <form>, justo despues de csrf_token, fuera de cualquier .form-group --
+   no es un item flex (<form> no es display:flex), solo necesita
+   separacion del siguiente campo. */
+.auth-form form > .errorlist {
+    margin-bottom: 15px;
+}
+
+/* El mensaje de error de login (signin.html) no sale de form.errors: la
+   vista nunca vincula el formulario al POST, asi que authenticate() falla
+   y el error vive en la variable de contexto "error", renderizado como un
+   <p> simple, no como un errorlist de Django. Es el unico <p> que queda
+   como hijo directo de <form> en .auth-form, asi que recibe el mismo
+   tratamiento visual de aviso de peligro sin agregar ninguna clase nueva
+   al template. */
+.auth-form form > p {
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger-text);
+    border-radius: 8px;
+    padding: 4px 10px;
+    margin: 0 0 15px 0;
+    font-size: 14px;
+}
+
 .table_container {
     width: 70%;
 }

@@ -4591,3 +4591,92 @@ class AgentSignupFormUxTests(TestCase):
         })
         self.assertEqual(resp.status_code, 403)
         self.assertFalse(User.objects.filter(username="nuevo_agente_4_4_2@test.cl").exists())
+class CustomerSignupAndSigninFormUxTests(TestCase):
+    # 4.4.3: en customer_signup.html, form.non_field_errors se mueve
+    # dentro de <form> y se retira el {% if error %} muerto (views.py
+    # nunca pasa esa clave al contexto). En signin.html, {% if error %}
+    # se mueve dentro de <form> conservando la variable tal cual (esa
+    # vista nunca vincula el formulario al POST, no hay
+    # form.non_field_errors real que mostrar). No se tocaron views.py,
+    # forms.py ni permisos.
+    VALID_PASSWORD = "Cu3nta$ecura99"
+
+    def _customer_post(self, **overrides):
+        data = {
+            "username": "cliente_4_4_3@test.cl",
+            "password1": self.VALID_PASSWORD,
+            "password2": self.VALID_PASSWORD,
+            "first_name": "A",
+            "last_name": "B",
+        }
+        data.update(overrides)
+        return self.client.post(reverse("customer_signup"), data)
+
+    def test_customer_signup_post_invalido_por_password_no_coincide_muestra_error_de_campo_dentro_del_form(self):
+        resp = self._customer_post(password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="cliente_4_4_3@test.cl").exists())
+        content = resp.content.decode()
+        form_open = content.index("<form")
+        form_close = content.index("</form>", form_open)
+        errorlist_idx = content.index("errorlist", form_open)
+        self.assertTrue(form_open < errorlist_idx < form_close)
+
+    def test_customer_signup_non_field_errors_se_renderiza_dentro_del_form(self):
+        # customer_creation_form no tiene hoy un clean() que agregue un
+        # error general (__all__). Para verificar que
+        # form.non_field_errors quedo bien ubicado DENTRO de <form>, se
+        # fuerza un error general via una subclase de prueba, sustituyendo
+        # unicamente la referencia que usa la vista durante este POST (no
+        # se modifica Helpdesk/forms.py ni Helpdesk/views.py).
+        class _FormConErrorGeneralForzado(customer_creation_form):
+            def clean(self):
+                cleaned_data = super().clean()
+                self.add_error(None, "Error general forzado para prueba 4.4.3")
+                return cleaned_data
+
+        with patch("Helpdesk.views.customer_creation_form", _FormConErrorGeneralForzado):
+            resp = self.client.post(reverse("customer_signup"), {
+                "username": "cliente_4_4_3_nfe@test.cl",
+                "password1": self.VALID_PASSWORD,
+                "password2": self.VALID_PASSWORD,
+                "first_name": "A",
+                "last_name": "B",
+            })
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(User.objects.filter(username="cliente_4_4_3_nfe@test.cl").exists())
+        content = resp.content.decode()
+        form_open = content.index("<form")
+        errorlist = content.index("errorlist nonfield", form_open)
+        form_close = content.index("</form>", form_open)
+        self.assertTrue(form_open < errorlist < form_close)
+
+    def test_customer_signup_no_muestra_el_bloque_if_error_muerto(self):
+        # views.py (customer_signup) nunca pasa "error" al contexto: esta
+        # prueba confirma que el POST invalido tampoco produce ningun
+        # rastro de ese mensaje generico retirado del template.
+        resp = self._customer_post(password2="OtraCosa$99")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("{% if error %}", resp.content.decode())
+
+    def test_signin_error_de_credenciales_invalidas_se_renderiza_dentro_del_form(self):
+        User.objects.create_user(username="existente_4_4_3@test.cl", password="ClaveValida$99")
+        resp = self.client.post(reverse("signin"), {
+            "username": "existente_4_4_3@test.cl",
+            "password": "ClaveIncorrecta",
+        })
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("Usuario o contraseña incorrecto", content)
+        form_open = content.index("<form")
+        form_close = content.index("</form>", form_open)
+        error_idx = content.index("Usuario o contrase", form_open)
+        self.assertTrue(form_open < error_idx < form_close)
+
+    def test_signin_login_valido_sigue_funcionando(self):
+        User.objects.create_user(username="valido_4_4_3@test.cl", password="ClaveValida$99")
+        resp = self.client.post(reverse("signin"), {
+            "username": "valido_4_4_3@test.cl",
+            "password": "ClaveValida$99",
+        })
+        self.assertEqual(resp.status_code, 302)

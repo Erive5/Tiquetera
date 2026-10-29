@@ -8,11 +8,25 @@
         <div class="content_box register-form auth-form">
             <div class="data_container">
                 <div class="form_card">
-                    {% if error %}
-                        <p>{{ error }}</p>
-                    {% endif %}
                     <form method="post">
                         {% csrf_token %}
+                        {% comment %}
+                        4.4.3: {% if error %} se mueve dentro de <form>,
+                        justo despues de csrf_token -- quedaba fuera de
+                        <form> (mismo bug ya corregido en otros formularios
+                        de este incremento). Se conserva la variable
+                        "error" tal cual: a diferencia de
+                        customer_signup.html/agent_signup.html, esta vista
+                        nunca vincula el formulario al POST
+                        (custom_authentication_form() se reinstancia
+                        vacio), asi que no existe un form.non_field_errors
+                        real que mostrar -- el error de autenticacion solo
+                        vive en esta variable de contexto. No se toco
+                        views.py.
+                        {% endcomment %}
+                        {% if error %}
+                            <p>{{ error }}</p>
+                        {% endif %}
                         <div class="form-group">
                             <label for="id_username">Usuario:</label>
                             {{ form.username }}
