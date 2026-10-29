@@ -192,6 +192,27 @@ en cada carga (una sola fuente de verdad). Los ejemplos usan los mismos componen
     <div class="alert alert--error">{% icon "circle-alert" %}<div class="alert__body"><p class="alert__title">Error</p><p>Qué falló y cómo resolverlo.</p></div></div>
   </div>
 
+  <h3>Acciones del ticket (V2)</h3>
+  <div class="specimen specimen--top">
+    {% with acciones=demo_acciones_abierto resolver_url="#" editar_url="#" %}{% include "v2/components/ticket_actions.html" %}{% endwith %}
+    {% with acciones=demo_acciones_sin_clasificar resolver_url="#" editar_url="#" %}{% include "v2/components/ticket_actions.html" %}{% endwith %}
+  </div>
+  <p class="t-help">Solo leen las acciones permitidas calculadas en el servidor. Una acción no disponible explica por qué.</p>
+
+  <h3>Lista de detalles (V2)</h3>
+  <div class="panel demo-field"><div class="panel__body">{% with ticket=demo_ticket %}{% include "v2/components/detail_list.html" %}{% endwith %}</div></div>
+
+  <h3>Área de texto y resumen de errores (V2)</h3>
+  <div class="stack demo-field-wide">
+    {% with errores=demo_errores %}{% include "v2/components/form_errors.html" %}{% endwith %}
+    <div class="field">
+      <label class="field__label" for="demo-textarea">Solución <span class="field__required">(obligatoria)</span></label>
+      <textarea class="control control--textarea" id="demo-textarea" rows="3" aria-invalid="true" aria-describedby="demo-textarea-error"></textarea>
+      <p class="field__error" id="demo-textarea-error">Escribe la solución antes de resolver el ticket.</p>
+    </div>
+    <div class="readonly">Cliente Demo 01<span class="readonly__note">Campo de solo lectura</span></div>
+  </div>
+
   <h3>Tabla de tickets</h3>
   <div class="panel">
     {% with tickets=muestra %}{% include "v2/components/ticket_table.html" %}{% endwith %}

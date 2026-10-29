@@ -1,0 +1,18 @@
+{% extends "v2/proto/_layout.html" %}
+{% load static tiquetera_v2 %}
+{% comment %}Estado V2: ticket inexistente (HTTP 404). No muestra ningún dato de tickets.{% endcomment %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'v2/css/proto.css' %}">{% endblock %}
+{% block breadcrumb %}<ol><li><a href="{% url 'proto:index' %}">Prototipo</a></li><li><span aria-current="page">Ticket no encontrado</span></li></ol>{% endblock %}
+{% block content %}
+<section class="panel" aria-labelledby="noenc-titulo">
+  <div class="empty">
+    <div class="empty__art">{% icon "search" %}</div>
+    <h1 class="empty__title" id="noenc-titulo">No encontramos ese ticket</h1>
+    <p class="empty__text">Puede que el número esté mal escrito o que el ticket ya no exista.</p>
+    <div class="empty__actions">
+      <a class="btn btn--primary" href="{% url inicio_url_name %}">{% icon "arrow-left" %}{% if rol and rol != "agente" %}Volver al inicio{% else %}Volver a mis pendientes{% endif %}</a>
+    </div>
+    <p class="empty__ref">Código 404</p>
+  </div>
+</section>
+{% endblock %}

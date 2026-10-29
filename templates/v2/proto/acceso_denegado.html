@@ -17,7 +17,7 @@ y ofrece la siguiente acción. En la versión integrada lo decidirá siempre el 
     <h1 class="empty__title" id="denegado-titulo">No tienes acceso a esta sección</h1>
     <p class="empty__text">Tu rol ({{ agente.rol }}) no tiene permiso para ver esta página. Si necesitas acceso, pídeselo al Jefe de Mesa.</p>
     <div class="empty__actions">
-      <a class="btn btn--primary" href="{% url 'proto:bandeja' %}">{% icon "arrow-left" %}Volver a mis pendientes</a>
+      <a class="btn btn--primary" href="{% url inicio_url_name %}">{% icon "arrow-left" %}{% if rol and rol != "agente" %}Volver al inicio{% else %}Volver a mis pendientes{% endif %}</a>
     </div>
     <p class="empty__ref">Código 403</p>
   </div>

@@ -1,0 +1,11 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: resumen de errores del formulario (patrón GOV.UK). Recibe el foco al cargar (app.js)
+y enlaza a cada campo. Entrada: errores [{campo (id del control), mensaje}].
+{% endcomment %}{% if errores %}
+<div class="form-errors" role="alert" tabindex="-1" data-error-summary aria-labelledby="form-errors-titulo">
+  <h3 class="form-errors__title" id="form-errors-titulo">{% icon "circle-alert" %}Revisa lo siguiente antes de continuar</h3>
+  <ul class="form-errors__list">
+    {% for e in errores %}<li><a href="#{{ e.campo }}">{{ e.mensaje }}</a></li>{% endfor %}
+  </ul>
+</div>
+{% endif %}

@@ -44,26 +44,40 @@ def proto_only(view):
 
 # --- Navegación común -----------------------------------------------------------
 
-def _nav(activo):
-    items = [
-        {"clave": "pendientes", "texto": "Pendientes en mi área", "icono": "inbox", "url_name": "proto:bandeja"},
-        {"clave": "abiertos", "texto": "Abiertos por mí", "icono": "file-plus", "url_name": "proto:fuera_de_alcance"},
-        {"clave": "resueltos", "texto": "Resueltos recientes", "icono": "circle-check", "url_name": "proto:fuera_de_alcance"},
-        {"clave": "clientes", "texto": "Clientes", "icono": "users", "url_name": "proto:fuera_de_alcance"},
-    ]
+def _nav(activo, rol="agente"):
+    fuera = "proto:fuera_de_alcance"
+    if rol == "jefe":
+        items = [
+            {"clave": "tickets", "texto": "Todos los tickets", "icono": "inbox", "url_name": fuera},
+            {"clave": "triage", "texto": "Sin triage", "icono": "circle-alert", "url_name": fuera},
+            {"clave": "agentes", "texto": "Agentes", "icono": "users", "url_name": fuera},
+            {"clave": "catalogos", "texto": "Catálogos", "icono": "layout-grid", "url_name": fuera},
+        ]
+    elif rol == "cliente":
+        items = [
+            {"clave": "mis", "texto": "Mis tickets", "icono": "inbox", "url_name": fuera},
+            {"clave": "crear", "texto": "Crear ticket", "icono": "plus", "url_name": fuera},
+        ]
+    else:
+        items = [
+            {"clave": "pendientes", "texto": "Pendientes en mi área", "icono": "inbox", "url_name": "proto:bandeja"},
+            {"clave": "abiertos", "texto": "Abiertos por mí", "icono": "file-plus", "url_name": fuera},
+            {"clave": "resueltos", "texto": "Resueltos recientes", "icono": "circle-check", "url_name": fuera},
+            {"clave": "clientes", "texto": "Clientes", "icono": "users", "url_name": fuera},
+        ]
     for item in items:
         item["activo"] = item["clave"] == activo
     return items
 
 
-def _base_context(activo, titulo):
+def _base_context(activo, titulo, rol="agente"):
     return {
-        "agente": fixtures.AGENTE,
-        "nav_items": _nav(activo),
+        "agente": fixtures.PERSONAS[rol] if rol != "agente" else fixtures.AGENTE,
+        "nav_items": _nav(activo, rol),
         "page_title": titulo,
-        "inicio_url_name": "proto:bandeja",
+        "inicio_url_name": "proto:bandeja" if rol == "agente" else "proto:index",
         "perfil_url_name": "proto:fuera_de_alcance",
-        "nav_count": len(fixtures.tickets_pendientes()),
+        "nav_count": len(fixtures.tickets_pendientes()) if rol == "agente" else None,
     }
 
 
@@ -401,5 +415,198 @@ def sistema(request):
         "muestra": muestra,
         "prioridades": [{"valor": k, "nombre": v["nombre"], "icono": v["icono"]} for k, v in fixtures.PRIORIDADES.items()],
         "umbral": UMBRAL_ANTIGUEDAD_DIAS,
+        # V2: ejemplos de componentes del detalle
+        "demo_acciones_abierto": acciones_permitidas("agente", {**muestra[0], **fixtures.ticket_por_id(9031)}),
+        "demo_acciones_sin_clasificar": acciones_permitidas("agente", fixtures.ticket_por_id(9096)),
+        "demo_ticket": {**fixtures.ticket_por_id(8990), "antiguo": False},
+        "demo_errores": [{"campo": "demo-textarea", "mensaje": "Escribe la solución antes de resolver el ticket."}],
     })
     return render(request, "v2/proto/sistema.html", ctx)
+
+
+# =============================================================================
+# V2 — Detalle de ticket (datos ficticios, rol simulado con ?rol=)
+# =============================================================================
+
+ROLES = ("agente", "jefe", "cliente")
+NAV_DETALLE = {"agente": "pendientes", "jefe": "tickets", "cliente": "mis"}
+
+
+def _en_alcance(rol, ticket):
+    """Representación ficticia del alcance (la regla real vive en el servidor: rbac/ticket_scope)."""
+    if rol == "jefe":
+        return True
+    if rol == "cliente":
+        return ticket["cliente"] == fixtures.PERSONAS["cliente"]["nombre"]
+    persona = fixtures.PERSONAS["agente"]
+    return (ticket["area"] == persona["area"]
+            or ticket["abierto_por"] == persona["nombre"]
+            or ticket["agente_cierre"] == persona["nombre"])
+
+
+def acciones_permitidas(rol, ticket):
+    """Contrato de presentación de V2: qué puede ver y hacer cada rol sobre un ticket.
+
+    Es una tabla FIJA de prototipo que representa las reglas acordadas (RBAC actual +
+    regla única de resolución + estados con categoría). Al integrar con Django, esta
+    misma estructura la calculará el servidor (policies.py); el template solo la lee.
+    Reabrir, Cerrar como no aplica y Eliminar no existen en V2.
+    """
+    categoria = ticket["estado_categoria"]
+    acciones = {
+        "ver": _en_alcance(rol, ticket),
+        "resolver": False,
+        "resolver_visible": False,
+        "resolver_motivo": "",
+        "editar": False,
+        "editar_solo_solucion": False,
+        "editar_area": False,
+        "ver_datos_internos": rol in ("agente", "jefe"),
+    }
+    if not acciones["ver"] or rol == "cliente":
+        return acciones
+
+    acciones["editar"] = True
+    acciones["editar_area"] = rol == "jefe"
+    if categoria == "open":
+        acciones["resolver"] = True
+        acciones["resolver_visible"] = True
+    elif categoria is None:
+        acciones["resolver_visible"] = True
+        acciones["resolver_motivo"] = (
+            f"El estado «{ticket['estado_nombre']}» está sin clasificar. "
+            "El Jefe de Mesa debe clasificarlo antes de que el ticket se pueda resolver."
+        )
+    else:  # resolved / not_applicable: solo se corrige la solución
+        acciones["editar_solo_solucion"] = True
+        acciones["editar_area"] = False
+    return acciones
+
+
+def _ticket_resuelto_simulado(ticket, persona, hoy):
+    t = dict(ticket)
+    t.update({
+        "estado": "resuelto",
+        "estado_nombre": fixtures.ESTADOS["resuelto"]["nombre"],
+        "estado_categoria": "resolved",
+        "solucion": "Solución de ejemplo registrada en el prototipo. Lo que escribiste no se guardó ni se envió.",
+        "agente_cierre": persona["nombre"],
+        "cierre": hoy,
+    })
+    return t
+
+
+@proto_only
+def ticket_detalle(request, ticket_id):
+    hoy = date.today()
+    avisos = []
+
+    rol = request.GET.get("rol", "agente")
+    if rol not in ROLES:
+        avisos.append(("warning", "Rol de simulación no válido", "Se muestra la vista de Agente."))
+        rol = "agente"
+    persona = fixtures.PERSONAS[rol]
+
+    ticket = fixtures.ticket_por_id(ticket_id, hoy)
+    if ticket is None:
+        ctx = _base_context(NAV_DETALLE[rol], "Ticket no encontrado", rol)
+        ctx.update({"rol": rol, "roles_url": _roles_urls(request.path)})
+        return render(request, "v2/proto/ticket_no_encontrado.html", ctx, status=404)
+
+    acciones = acciones_permitidas(rol, ticket)
+    if not acciones["ver"]:
+        ctx = _base_context(NAV_DETALLE[rol], "No tienes acceso a esta sección", rol)
+        ctx.update({"rol": rol, "roles_url": _roles_urls(request.path)})
+        return render(request, "v2/proto/acceso_denegado.html", ctx, status=403)
+
+    vista = request.GET.get("vista", "")
+    accion = request.GET.get("accion", "")
+    simular = request.GET.get("simular", "")
+    if accion not in ("", "resolver", "editar"):
+        accion = ""
+    if simular not in ("", "errores", "exito"):
+        simular = ""
+
+    # Una acción no permitida para este rol/estado se ignora y se explica (nunca se muestra el formulario).
+    if accion == "resolver" and not acciones["resolver"]:
+        avisos.append(("warning", "Esta acción no está disponible",
+                       acciones["resolver_motivo"] or "Tu rol o el estado del ticket no permiten resolverlo."))
+        accion = ""
+    if accion == "editar" and not acciones["editar"]:
+        avisos.append(("warning", "Esta acción no está disponible", "Tu rol no permite editar este ticket."))
+        accion = ""
+
+    exito = None
+    errores = []
+    if accion and simular == "exito":
+        if accion == "resolver":
+            ticket = _ticket_resuelto_simulado(ticket, persona, hoy)
+            acciones = acciones_permitidas(rol, ticket)
+            exito = f"Ticket #{ticket['id']} resuelto (simulado). No se guardó ningún cambio."
+        else:
+            exito = "Cambios guardados (simulado). No se guardó ningún cambio."
+        accion = ""
+    elif accion == "resolver" and simular == "errores":
+        errores = [{"campo": "f-solucion", "clave": "solucion", "mensaje": "Escribe la solución antes de resolver el ticket."}]
+    elif accion == "editar" and simular == "errores":
+        if acciones["editar_solo_solucion"]:
+            errores = [{"campo": "f-edit-solucion", "clave": "edit_solucion", "mensaje": "La solución no puede quedar vacía."}]
+        else:
+            errores = [{"campo": "f-asunto", "clave": "asunto", "mensaje": "Escribe un asunto para el ticket."}]
+    errores_por_campo = {e["clave"]: e["mensaje"] for e in errores}
+
+    # La antigüedad solo se destaca en tickets pendientes; en los cerrados no es una alerta.
+    cerrado = ticket["estado_categoria"] in ("resolved", "not_applicable")
+    ticket["antiguo"] = not cerrado and ticket["dias"] >= UMBRAL_ANTIGUEDAD_DIAS
+    titulo = f"#{ticket['id']} · {ticket['asunto']}"
+    if vista == "error":
+        titulo = "No pudimos cargar el ticket"
+    elif accion == "resolver":
+        titulo = f"Resolver #{ticket['id']}"
+    elif accion == "editar":
+        titulo = f"Editar #{ticket['id']}"
+    if errores:
+        titulo = f"Error: {titulo}"
+
+    if acciones["ver_datos_internos"] and ticket["estado_categoria"] is None:
+        avisos.append(("info", "Estado sin clasificar",
+                       "Este ticket no se puede resolver hasta que el Jefe de Mesa clasifique el estado "
+                       f"«{ticket['estado_nombre']}» como abierto o como no aplica."
+                       + (" La clasificación de estados se diseñará en otro incremento." if rol == "jefe" else "")))
+    if acciones["ver_datos_internos"] and not ticket["area"] and ticket["estado_categoria"] == "open":
+        avisos.append(("warning", "Pendiente de triage",
+                       "Este ticket no tiene área asignada, así que todavía no aparece en ninguna bandeja de agentes."
+                       + (" Asígnale un área desde «Editar»." if rol == "jefe" else "")))
+
+    base_url = request.path
+    estados_editables = [{"valor": k, "nombre": v["nombre"]} for k, v in fixtures.ESTADOS.items() if v["categoria"] == "open"]
+
+    ctx = _base_context(NAV_DETALLE[rol], titulo, rol)
+    ctx.update({
+        "rol": rol,
+        "persona": persona,
+        "roles_url": _roles_urls(base_url),
+        "ticket": ticket,
+        "acciones": acciones,
+        "accion": accion,
+        "vista": vista if vista == "error" else "",
+        "exito": exito,
+        "errores": errores,
+        "errores_por_campo": errores_por_campo,
+        "avisos": avisos,
+        "detalle_url": f"{base_url}?{urlencode({'rol': rol})}",
+        "resolver_url": f"{base_url}?{urlencode({'rol': rol, 'accion': 'resolver'})}",
+        "editar_url": f"{base_url}?{urlencode({'rol': rol, 'accion': 'editar'})}",
+        "reintentar_url": f"{base_url}?{urlencode({'rol': rol})}",
+        "prioridades": [{"valor": k, "nombre": v["nombre"]} for k, v in fixtures.PRIORIDADES.items()],
+        "tipos": [{"valor": k, "nombre": v} for k, v in fixtures.TIPOS.items()],
+        "estados_editables": estados_editables,
+        "areas": fixtures.AREAS,
+        "hoy": hoy,
+    })
+    return render(request, "v2/proto/ticket_detalle.html", ctx)
+
+
+def _roles_urls(path):
+    nombres = {"agente": "Agente", "jefe": "Jefe de Mesa", "cliente": "Cliente"}
+    return [{"clave": r, "nombre": nombres[r], "url": f"{path}?{urlencode({'rol': r})}"} for r in ROLES]

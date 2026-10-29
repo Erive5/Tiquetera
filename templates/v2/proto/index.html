@@ -5,14 +5,14 @@
 {% block content %}
 <header class="page-header">
   <div class="page-header__text">
-    <p class="overline">Tiquetera v2 · Incremento V1</p>
+    <p class="overline">Tiquetera v2 · Incrementos V1 y V2</p>
     <h1>Índice del prototipo</h1>
-    <p class="page-header__subtitle">Bandeja «Pendientes en mi área» del Agente y sistema de diseño. Todos los datos son ficticios y nada se guarda.</p>
+    <p class="page-header__subtitle">Bandeja «Pendientes en mi área», detalle de ticket con roles simulados y sistema de diseño. Todos los datos son ficticios y nada se guarda.</p>
   </div>
 </header>
 
 <section class="doc-grid" aria-labelledby="pantallas-titulo">
-  <h2 id="pantallas-titulo" class="doc-grid__title">Pantalla y estados</h2>
+  <h2 id="pantallas-titulo" class="doc-grid__title">Bandeja (V1)</h2>
   <ul class="doc-cards" role="list">
     <li><a class="doc-card" href="{% url 'proto:bandeja' %}"><span class="doc-card__title">{% icon "inbox" %}Bandeja con datos</span><span class="doc-card__text">36 tickets ficticios, resumen, filtros y paginación.</span></a></li>
     <li><a class="doc-card" href="{% url 'proto:bandeja' %}?prioridad=alta&amp;tipo=reclamo"><span class="doc-card__title">{% icon "sliders-horizontal" %}Con filtros activos</span><span class="doc-card__text">Prioridad alta y tipo reclamo, con chips para quitarlos.</span></a></li>
@@ -22,6 +22,25 @@
     <li><a class="doc-card" href="{% url 'proto:bandeja' %}?prioridad=urgente&amp;desde=31-02-2026"><span class="doc-card__title">{% icon "circle-alert" %}Filtros inválidos</span><span class="doc-card__text">Valores que no existen: se ignoran y se explica por qué.</span></a></li>
     <li><a class="doc-card" href="{% url 'proto:bandeja' %}?estado=sin-clasificar"><span class="doc-card__title">{% icon "circle-help" %}Estado sin clasificar</span><span class="doc-card__text">Ticket con un estado personalizado aún no clasificado.</span></a></li>
     <li><a class="doc-card" href="{% url 'proto:acceso_denegado' %}"><span class="doc-card__title">{% icon "lock" %}Acceso denegado</span><span class="doc-card__text">Respuesta 403 con la siguiente acción.</span></a></li>
+  </ul>
+</section>
+
+<section class="doc-grid" aria-labelledby="detalle-titulo">
+  <h2 id="detalle-titulo" class="doc-grid__title">Detalle de ticket (V2)</h2>
+  <ul class="doc-cards" role="list">
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9031 %}"><span class="doc-card__title">{% icon "file-text" %}Abierto · Agente</span><span class="doc-card__text">Resolver (primaria) y Editar. Cambia de rol desde la banda.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9031 %}?rol=cliente"><span class="doc-card__title">{% icon "user" %}Abierto · Cliente</span><span class="doc-card__text">Solo lectura, sin datos internos.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9031 %}?accion=resolver"><span class="doc-card__title">{% icon "check" %}Formulario: resolver</span><span class="doc-card__text">Solución obligatoria; el agente de cierre se registra solo.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9031 %}?accion=resolver&amp;simular=errores"><span class="doc-card__title">{% icon "circle-alert" %}Resolver con errores</span><span class="doc-card__text">Resumen de errores con foco y enlace al campo.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9031 %}?accion=resolver&amp;simular=exito"><span class="doc-card__title">{% icon "circle-check" %}Resolver con éxito</span><span class="doc-card__text">Confirmación simulada y ticket en estado resuelto.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9150 %}?rol=jefe&amp;accion=editar"><span class="doc-card__title">{% icon "pencil" %}Editar · Jefe de Mesa</span><span class="doc-card__text">Ticket sin área (triage); el Jefe puede asignarla.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9096 %}"><span class="doc-card__title">{% icon "circle-help" %}Estado sin clasificar</span><span class="doc-card__text">Resolver deshabilitado con motivo visible.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 8990 %}"><span class="doc-card__title">{% icon "circle-check" %}Resuelto con solución</span><span class="doc-card__text">Solución, agente y fecha de cierre.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 8975 %}"><span class="doc-card__title">{% icon "info" %}Resuelto sin solución (histórico)</span><span class="doc-card__text">Se conserva tal cual, sin inventar datos.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 8962 %}"><span class="doc-card__title">{% icon "minus" %}No aplica</span><span class="doc-card__text">Ticket cerrado como «No aplica».</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9201 %}"><span class="doc-card__title">{% icon "lock" %}Fuera de alcance (403)</span><span class="doc-card__text">Ticket de otra área visto como Agente.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 99999 %}"><span class="doc-card__title">{% icon "search" %}No encontrado (404)</span><span class="doc-card__text">Número de ticket inexistente.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9031 %}?vista=error"><span class="doc-card__title">{% icon "triangle-alert" %}Error al cargar</span><span class="doc-card__text">Fallo simulado con opción de reintentar.</span></a></li>
   </ul>
 </section>
 

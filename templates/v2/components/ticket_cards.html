@@ -8,7 +8,7 @@ Entrada: tickets.
       <span class="cell-id">#{{ ticket.id }}</span>
       {% include "v2/components/status_badge.html" %}
     </div>
-    <h3 class="ticket-card__title"><a href="{% url 'proto:fuera_de_alcance' %}">{{ ticket.asunto }}</a></h3>
+    <h3 class="ticket-card__title"><a href="{% url 'proto:ticket_detalle' ticket.id %}">{{ ticket.asunto }}</a></h3>
     <p class="ticket-card__meta"><span>{{ ticket.cliente }}</span><span>{{ ticket.tipo_nombre }}</span></p>
     <div class="ticket-card__bottom">
       {% include "v2/components/priority.html" %}

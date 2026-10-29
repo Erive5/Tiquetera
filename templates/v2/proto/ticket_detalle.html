@@ -1,0 +1,198 @@
+{% extends "v2/proto/_layout.html" %}
+{% load static tiquetera_v2 %}
+{% comment %}
+Pantalla V2: detalle de ticket con datos ficticios y rol simulado (?rol=agente|jefe|cliente).
+Las acciones salen de "acciones" (contrato allowed_actions); este template no decide permisos.
+Formularios simulados: method="get", sin POST; los campos de texto no tienen "name", así que lo
+escrito nunca viaja en la URL. Solo se envían rol, accion y simular.
+{% endcomment %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'v2/css/proto.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+<ol>
+  {% if rol == "jefe" %}<li><a href="{% url 'proto:fuera_de_alcance' %}">Todos los tickets</a></li>
+  {% elif rol == "cliente" %}<li><a href="{% url 'proto:fuera_de_alcance' %}">Mis tickets</a></li>
+  {% else %}<li><a href="{% url 'proto:index' %}">Mi trabajo</a></li><li><a href="{% url 'proto:bandeja' %}">Pendientes en mi área</a></li>{% endif %}
+  <li><span aria-current="page" class="tnum">#{{ ticket.id }}</span></li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<header class="page-header detail-header">
+  <div class="page-header__text">
+    <p class="overline tnum">Ticket #{{ ticket.id }}</p>
+    <h1>{{ ticket.asunto }}</h1>
+    <div class="detail-header__meta">
+      {% include "v2/components/status_badge.html" %}
+      {% include "v2/components/priority.html" %}
+      {% if ticket.cierre and ticket.estado_categoria != "open" and ticket.estado_categoria is not None %}<span class="detail-header__age">Cerrado el <time class="tnum" datetime="{{ ticket.cierre|date:'Y-m-d' }}">{{ ticket.cierre|date:"d/m/Y" }}</time></span>
+      {% else %}<span class="detail-header__age">Abierto {% if ticket.dias == 0 %}hoy{% else %}hace {{ ticket.dias|dias_texto }}{% endif %}</span>{% endif %}
+    </div>
+  </div>
+  {% if not accion and vista != "error" %}{% include "v2/components/ticket_actions.html" %}{% endif %}
+</header>
+
+{% if vista == "error" %}
+<section class="panel" aria-labelledby="error-titulo">
+  <div class="empty" role="alert">
+    <div class="empty__art empty__art--error">{% icon "triangle-alert" %}</div>
+    <h2 class="empty__title" id="error-titulo">No pudimos cargar el ticket</h2>
+    <p class="empty__text">El problema es del servidor, no de tu conexión. Vuelve a intentarlo en unos segundos.</p>
+    <div class="empty__actions"><a class="btn btn--secondary" href="{{ reintentar_url }}">{% icon "refresh-cw" %}Reintentar</a></div>
+    <p class="empty__ref">Referencia del error: PROTO-500 (simulado)</p>
+  </div>
+</section>
+{% else %}
+
+{% for tipo, titulo, texto in avisos %}
+<div class="alert alert--{{ tipo }}" role="{% if tipo == 'warning' %}alert{% else %}note{% endif %}">
+  {% if tipo == "info" %}{% icon "info" %}{% else %}{% icon "triangle-alert" %}{% endif %}
+  <div class="alert__body"><p class="alert__title">{{ titulo }}</p><p>{{ texto }}</p></div>
+</div>
+{% endfor %}
+
+{% if exito %}
+<div class="alert alert--success" role="status">
+  {% icon "circle-check" %}
+  <div class="alert__body"><p class="alert__title">{{ exito }}</p><p>Es una confirmación simulada para revisar el diseño.</p></div>
+</div>
+{% endif %}
+
+<div class="detail-layout">
+  <div class="detail-main">
+
+    {% if accion == "editar" %}
+    {# ---------------------------------------------------------- Formulario: editar #}
+    <section class="panel" aria-labelledby="editar-titulo">
+      <header class="panel__header"><h2 id="editar-titulo">{% if acciones.editar_solo_solucion %}{% if ticket.solucion %}Corregir solución{% else %}Agregar solución{% endif %}{% else %}Editar ticket{% endif %}</h2></header>
+      <form class="panel__body detail-form" method="get" action="{{ request.path }}" novalidate data-proto-form>
+        <input type="hidden" name="rol" value="{{ rol }}">
+        <input type="hidden" name="accion" value="editar">
+        <input type="hidden" name="simular" value="exito" data-simular>
+        {% include "v2/components/form_errors.html" %}
+        {% if acciones.editar_solo_solucion %}
+        <p class="field__help">El ticket está cerrado: solo se puede corregir el texto de la solución. El agente y la fecha de cierre no cambian.</p>
+        <div class="field">
+          <label class="field__label" for="f-edit-solucion">Solución <span class="field__required">(obligatoria)</span></label>
+          <textarea class="control control--textarea" id="f-edit-solucion" rows="6" data-required aria-describedby="f-edit-solucion-ayuda{% if errores_por_campo.edit_solucion %} f-edit-solucion-error{% endif %}"{% if errores_por_campo.edit_solucion %} aria-invalid="true"{% endif %}>{% if not errores_por_campo.edit_solucion %}{{ ticket.solucion }}{% endif %}</textarea>
+          <p class="field__help" id="f-edit-solucion-ayuda">Visible para el cliente.</p>
+          {% if errores_por_campo.edit_solucion %}<p class="field__error" id="f-edit-solucion-error">{{ errores_por_campo.edit_solucion }}</p>{% endif %}
+        </div>
+        {% else %}
+        <div class="field">
+          <label class="field__label" for="f-asunto">Asunto <span class="field__required">(obligatorio)</span></label>
+          <input class="control" type="text" id="f-asunto" value="{% if not errores_por_campo.asunto %}{{ ticket.asunto }}{% endif %}" maxlength="200" data-required{% if errores_por_campo.asunto %} aria-invalid="true" aria-describedby="f-asunto-error"{% endif %}>
+          {% if errores_por_campo.asunto %}<p class="field__error" id="f-asunto-error">{{ errores_por_campo.asunto }}</p>{% endif %}
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label class="field__label" for="f-prioridad">Prioridad</label>
+            <select class="control" id="f-prioridad">{% for p in prioridades %}<option{% if p.valor == ticket.prioridad %} selected{% endif %}>{{ p.nombre }}</option>{% endfor %}</select>
+          </div>
+          <div class="field">
+            <label class="field__label" for="f-tipo">Tipo</label>
+            <select class="control" id="f-tipo">{% for t in tipos %}<option{% if t.valor == ticket.tipo %} selected{% endif %}>{{ t.nombre }}</option>{% endfor %}</select>
+          </div>
+          <div class="field">
+            <label class="field__label" for="f-estado">Estado</label>
+            <select class="control" id="f-estado" aria-describedby="f-estado-ayuda">
+              {% if ticket.estado_categoria is None %}<option selected disabled>Sin clasificar · {{ ticket.estado_nombre }}</option>{% endif %}
+              {% for e in estados_editables %}<option{% if e.valor == ticket.estado %} selected{% endif %}>{{ e.nombre }}</option>{% endfor %}
+            </select>
+            <p class="field__help" id="f-estado-ayuda">Para resolver usa «Resolver».</p>
+          </div>
+          <div class="field">
+            {% if acciones.editar_area %}
+            <label class="field__label" for="f-area">Área asignada</label>
+            <select class="control" id="f-area">
+              {% if not ticket.area %}<option selected>Sin asignar</option>{% endif %}
+              {% for a in areas %}<option{% if a == ticket.area %} selected{% endif %}>{{ a }}</option>{% endfor %}
+            </select>
+            {% else %}
+            <span class="field__label" id="f-area-label">Área asignada</span>
+            <p class="readonly" aria-labelledby="f-area-label">{{ ticket.area|default:"Sin asignar" }}<span class="readonly__note">Solo el Jefe de Mesa puede reasignarla</span></p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="field">
+          <label class="field__label" for="f-observacion">Descripción del cliente</label>
+          <textarea class="control control--textarea" id="f-observacion" rows="4">{{ ticket.observacion }}</textarea>
+        </div>
+        <div class="field">
+          <span class="field__label" id="f-cliente-label">Cliente</span>
+          <p class="readonly" aria-labelledby="f-cliente-label">{{ ticket.cliente }}<span class="readonly__note">No se puede cambiar</span></p>
+        </div>
+        {% endif %}
+        <div class="form-actions">
+          <button type="submit" class="btn btn--primary">{% icon "check" %}Guardar cambios</button>
+          <a class="btn btn--secondary" href="{{ detalle_url }}">Cancelar</a>
+        </div>
+      </form>
+    </section>
+    {% endif %}
+
+    {% if accion != "editar" %}
+    {# ------------------------------------------------------------- Descripción #}
+    <section class="panel" aria-labelledby="descripcion-titulo">
+      <header class="panel__header"><h2 id="descripcion-titulo">{% icon "file-text" %}Descripción del cliente</h2></header>
+      <div class="panel__body"><p class="prose">{{ ticket.observacion }}</p></div>
+    </section>
+
+    {# --------------------------------------------------------------- Resolución #}
+    <section class="panel" aria-labelledby="resolucion-titulo" id="resolucion">
+      <header class="panel__header"><h2 id="resolucion-titulo">{% icon "circle-check" %}{% if accion == "resolver" %}Resolver ticket{% else %}Resolución{% endif %}</h2></header>
+      <div class="panel__body">
+        {% if ticket.estado_categoria == "resolved" %}
+          {% if ticket.solucion %}
+          <p class="prose">{{ ticket.solucion }}</p>
+          <p class="resolution-meta">Resuelto por <strong>{{ ticket.agente_cierre|default:"—" }}</strong>{% if ticket.cierre %} el <time class="tnum" datetime="{{ ticket.cierre|date:'Y-m-d' }}">{{ ticket.cierre|date:"d/m/Y" }}</time>{% endif %}</p>
+          {% else %}
+          <div class="alert alert--neutral" role="note">{% icon "info" %}<div class="alert__body"><p class="alert__title">Resuelto · sin solución registrada</p><p>Este ticket se cerró antes de que la solución fuera obligatoria. Se conserva tal como quedó.</p></div></div>
+          {% endif %}
+        {% elif ticket.estado_categoria == "not_applicable" %}
+          <p class="resolution-label">Cerrado como «{{ ticket.estado_nombre }}»</p>
+          {% if ticket.solucion %}<p class="prose">{{ ticket.solucion }}</p>{% endif %}
+          <p class="resolution-meta">Cerrado por <strong>{{ ticket.agente_cierre|default:"—" }}</strong>{% if ticket.cierre %} el <time class="tnum" datetime="{{ ticket.cierre|date:'Y-m-d' }}">{{ ticket.cierre|date:"d/m/Y" }}</time>{% endif %}</p>
+        {% elif accion == "resolver" %}
+          {# -------------------------------------------------- Formulario: resolver #}
+          <form class="detail-form" method="get" action="{{ request.path }}" novalidate data-proto-form>
+            <input type="hidden" name="rol" value="{{ rol }}">
+            <input type="hidden" name="accion" value="resolver">
+            <input type="hidden" name="simular" value="exito" data-simular>
+            {% include "v2/components/form_errors.html" %}
+            <div class="field">
+              <label class="field__label" for="f-solucion">Solución <span class="field__required">(obligatoria)</span></label>
+              <textarea class="control control--textarea" id="f-solucion" rows="6" data-required aria-describedby="f-solucion-ayuda{% if errores_por_campo.solucion %} f-solucion-error{% endif %}"{% if errores_por_campo.solucion %} aria-invalid="true"{% endif %}></textarea>
+              <p class="field__help" id="f-solucion-ayuda">Visible para el cliente. Explica qué se hizo y si debe hacer algo más.</p>
+              {% if errores_por_campo.solucion %}<p class="field__error" id="f-solucion-error">{{ errores_por_campo.solucion }}</p>{% endif %}
+            </div>
+            <dl class="detail-list detail-list--inline">
+              <div class="detail-list__item"><dt>Agente de cierre</dt><dd>Tú · {{ persona.nombre }}<span class="readonly__note">Se registra automáticamente</span></dd></div>
+              <div class="detail-list__item"><dt>Fecha de cierre</dt><dd class="tnum"><time datetime="{{ hoy|date:'Y-m-d' }}">{{ hoy|date:"d/m/Y" }}</time> (hoy)</dd></div>
+            </dl>
+            <div class="form-actions">
+              <button type="submit" class="btn btn--primary">{% icon "check" %}Marcar como resuelto</button>
+              <a class="btn btn--secondary" href="{{ detalle_url }}">Cancelar</a>
+            </div>
+          </form>
+        {% elif rol == "cliente" %}
+          <p class="resolution-empty">Aún no hay una solución. Cuando el equipo la registre, aparecerá aquí.</p>
+        {% else %}
+          <p class="resolution-empty">Este ticket aún no tiene solución.</p>
+          {% if acciones.resolver %}<a class="btn btn--ghost" href="{{ resolver_url }}">{% icon "pencil" %}Escribir la solución</a>{% endif %}
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </div>
+
+  {# ----------------------------------------------------------------- Detalles #}
+  <aside class="detail-aside" aria-labelledby="detalles-titulo">
+    <section class="panel">
+      <header class="panel__header"><h2 id="detalles-titulo">Detalles</h2></header>
+      <div class="panel__body">{% include "v2/components/detail_list.html" %}</div>
+    </section>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}

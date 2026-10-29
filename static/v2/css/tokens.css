@@ -112,6 +112,11 @@
     --alert-error-border: var(--coral-100);
     --alert-error-text: var(--coral-700);
     --color-aging: var(--amber-700);
+    --alert-success-bg: var(--turquoise-50);
+    --alert-success-text: var(--turquoise-700);
+    --alert-neutral-bg: var(--neutral-100);
+    --alert-neutral-border: var(--neutral-200);
+    --alert-neutral-text: var(--neutral-700);
 
     /* --- Tipografía ------------------------------------------------------- */
     --font-display: "Raleway", "Segoe UI", system-ui, sans-serif;

@@ -77,8 +77,30 @@
   .on-dark { padding: var(--space-4); border-radius: var(--radius-md); background: var(--color-nav-bg); color: var(--color-nav-text); }
   .on-dark .focus-demo { outline-color: var(--color-focus-on-dark); }
   .demo-field { max-width: 22rem; }
+  .demo-field-wide { max-width: 40rem; }
+
+  /* Selector de rol (solo prototipo), dentro de la banda */
+  .role-switch { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-1) var(--space-2); }
+  .role-switch__label { font-weight: var(--weight-semibold); }
+  .role-switch__list { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+  .role-switch__link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.75rem;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-proto-text);
+    border-radius: var(--radius-pill);
+    color: var(--color-proto-text);
+    text-decoration: none;
+    font-weight: var(--weight-semibold);
+  }
+  .role-switch__link:hover { background: var(--color-proto-text); color: var(--neutral-0); }
+  .role-switch__link[aria-current="page"] { background: var(--color-proto-text); color: var(--neutral-0); }
+  .role-switch__note { font-weight: var(--weight-regular); font-style: italic; }
+  .proto-band .role-switch__link:focus-visible { outline-color: var(--color-proto-text); }
 
   @media (max-width: 47.5rem) {
+    .role-switch__note { display: none; }
     .doc-section { padding: var(--space-4); }
     .type-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
     .space-row { grid-template-columns: 6rem 4rem minmax(0, 1fr); }

@@ -19,13 +19,13 @@ Entradas: tickets, f.orden, agente.area.
       <tr{% if ticket.prioridad == "alta" %} class="is-high"{% endif %}>
         <td class="cell-id">#{{ ticket.id }}</td>
         <td class="cell-subject">
-          <a href="{% url 'proto:fuera_de_alcance' %}">{{ ticket.asunto }}</a>
+          <a href="{% url 'proto:ticket_detalle' ticket.id %}">{{ ticket.asunto }}</a>
           <span class="cell-subject__meta">{{ ticket.cliente }} · {{ ticket.tipo_nombre }}</span>
         </td>
         <td>{% include "v2/components/priority.html" %}</td>
         <td>{% include "v2/components/ticket_age.html" %}</td>
         <td>{% include "v2/components/status_badge.html" %}</td>
-        <td class="cell-action"><a class="row-link" href="{% url 'proto:fuera_de_alcance' %}">Ver<span class="sr-only"> ticket #{{ ticket.id }}</span>{% icon "chevron-right" %}</a></td>
+        <td class="cell-action"><a class="row-link" href="{% url 'proto:ticket_detalle' ticket.id %}">Ver<span class="sr-only"> ticket #{{ ticket.id }}</span>{% icon "chevron-right" %}</a></td>
       </tr>
       {% endfor %}
     </tbody>

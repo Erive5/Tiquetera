@@ -11,4 +11,5 @@ urlpatterns = [
     path("acceso-denegado/", proto_views.acceso_denegado, name="acceso_denegado"),
     path("no-incluido/", proto_views.fuera_de_alcance, name="fuera_de_alcance"),
     path("sistema/", proto_views.sistema, name="sistema"),
+    path("tickets/<int:ticket_id>/", proto_views.ticket_detalle, name="ticket_detalle"),
 ]

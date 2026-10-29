@@ -1,0 +1,10 @@
+{% comment %}
+Componente EXCLUSIVO del prototipo: simulación de rol con ?rol=. No es control de acceso:
+el RBAC real solo se verifica al integrar con Django. Entradas: rol, roles_url [{clave, nombre, url}].
+{% endcomment %}<nav class="role-switch" aria-label="Simulación de rol (solo prototipo)">
+  <span class="role-switch__label">Viendo como<span class="sr-only"> (simulación, no es control de acceso)</span>:</span>
+  <ul class="role-switch__list" role="list">
+    {% for r in roles_url %}<li><a class="role-switch__link" href="{{ r.url }}"{% if r.clave == rol %} aria-current="page"{% endif %}>{{ r.nombre }}</a></li>{% endfor %}
+  </ul>
+  <span class="role-switch__note" aria-hidden="true">simulación, no es control de acceso</span>
+</nav>

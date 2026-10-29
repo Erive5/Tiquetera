@@ -1,0 +1,21 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: acciones del ticket. Solo LEE allowed_actions (aquí "acciones"); nunca decide permisos.
+Entradas: acciones {resolver, resolver_visible, resolver_motivo, editar, editar_solo_solucion}, ticket.solucion, resolver_url, editar_url.
+Una sola acción primaria. Reabrir, Cerrar como no aplica y Eliminar no existen en V2.
+{% endcomment %}{% if acciones.resolver_visible or acciones.editar %}
+<div class="detail-actions">
+  <div class="action-bar" role="group" aria-label="Acciones del ticket">
+    {% if acciones.resolver %}
+    <a class="btn btn--primary" href="{{ resolver_url }}">{% icon "check" %}Resolver</a>
+    {% elif acciones.resolver_visible %}
+    <button type="button" class="btn btn--primary" disabled aria-describedby="motivo-resolver">{% icon "check" %}Resolver</button>
+    {% endif %}
+    {% if acciones.editar %}
+    <a class="btn btn--secondary" href="{{ editar_url }}">{% icon "pencil" %}{% if acciones.editar_solo_solucion %}{% if ticket.solucion %}Corregir solución{% else %}Agregar solución{% endif %}{% else %}Editar{% endif %}</a>
+    {% endif %}
+  </div>
+  {% if acciones.resolver_visible and not acciones.resolver %}
+  <p class="action-bar__reason" id="motivo-resolver">{% icon "lock" %}<span>{{ acciones.resolver_motivo }}</span></p>
+  {% endif %}
+</div>
+{% endif %}

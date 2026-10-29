@@ -3,6 +3,8 @@
  *  - Cajón de navegación en tablet/móvil (botón, Escape, clic fuera, cierre al salir el foco,
  *    devolución de foco).
  *  - Panel de filtros colapsable en móvil (aria-expanded).
+ *  - V2: formularios simulados del prototipo (marca "simular=errores" si un campo
+ *    obligatorio está vacío) y foco en el resumen de errores al cargar.
  * Todo el contenido funciona sin este archivo. Sin dependencias externas.
  */
 (function () {
@@ -77,4 +79,22 @@
       if (!e.matches) setFilters(true);
     });
   }
+
+  /* --- V2: formularios simulados del prototipo ---------------------------- */
+  // Los campos de texto no tienen "name": nada de lo escrito viaja en la URL.
+  // Solo se decide si el envío simula éxito o errores (campo obligatorio vacío).
+  document.querySelectorAll("form[data-proto-form]").forEach(function (form) {
+    form.addEventListener("submit", function () {
+      var simular = form.querySelector("[data-simular]");
+      if (!simular) return;
+      var vacio = Array.prototype.some.call(form.querySelectorAll("[data-required]"), function (campo) {
+        return campo.value.trim() === "";
+      });
+      simular.value = vacio ? "errores" : "exito";
+    });
+  });
+
+  // Con errores, el foco va al resumen para que el lector de pantalla lo anuncie.
+  var resumenErrores = document.querySelector("[data-error-summary]");
+  if (resumenErrores) resumenErrores.focus();
 })();

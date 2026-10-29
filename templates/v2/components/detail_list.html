@@ -1,0 +1,13 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente: lista de detalles del ticket (<dl> semántico). Entrada: ticket (con datos de detalle).
+{% endcomment %}<dl class="detail-list">
+  <div class="detail-list__item"><dt>Cliente</dt><dd>{{ ticket.cliente }}</dd></div>
+  <div class="detail-list__item"><dt>Tipo</dt><dd>{{ ticket.tipo_nombre }}</dd></div>
+  <div class="detail-list__item"><dt>Área asignada</dt><dd>{% if ticket.area %}{{ ticket.area }}{% else %}<span class="detail-list__warn">{% icon "triangle-alert" %}Sin asignar</span>{% endif %}</dd></div>
+  <div class="detail-list__item"><dt>Abierto por</dt><dd>{% if ticket.abierto_por %}{{ ticket.abierto_por }}{% else %}El cliente, desde el portal{% endif %}</dd></div>
+  <div class="detail-list__item"><dt>Apertura</dt><dd>{% include "v2/components/ticket_age.html" %}</dd></div>
+  {% if ticket.estado_categoria == "resolved" or ticket.estado_categoria == "not_applicable" %}
+  <div class="detail-list__item"><dt>Cerrado por</dt><dd>{% if ticket.agente_cierre %}{{ ticket.agente_cierre }}{% else %}<span class="text-muted">No registrado</span>{% endif %}</dd></div>
+  <div class="detail-list__item"><dt>Fecha de cierre</dt><dd class="tnum">{% if ticket.cierre %}<time datetime="{{ ticket.cierre|date:'Y-m-d' }}">{{ ticket.cierre|date:"d/m/Y" }}</time>{% else %}<span class="text-muted">No registrada</span>{% endif %}</dd></div>
+  {% endif %}
+</dl>

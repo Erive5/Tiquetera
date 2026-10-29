@@ -42,10 +42,20 @@ RUTAS = {
     "/_proto/acceso-denegado/": 403,
     "/_proto/no-incluido/": 200,
     "/_proto/sistema/": 200,
+    "/_proto/tickets/9031/": 200,
 }
 ESTADOS_BANDEJA = ["", "?vista=vacio", "?vista=error", "?q=zzz", "?prioridad=alta&tipo=reclamo",
                    "?estado=sin-clasificar", "?pagina=3", "?orden=antiguedad"]
 BANDEJA = "/_proto/agente/pendientes/"
+DETALLE = "/_proto/tickets/"
+ESTADOS_DETALLE = {
+    "9031/?rol=jefe": 200, "9031/?rol=cliente": 200, "9031/?accion=resolver": 200,
+    "9031/?accion=resolver&simular=errores": 200, "9031/?accion=resolver&simular=exito": 200,
+    "9031/?accion=editar": 200, "9031/?accion=editar&simular=errores": 200, "9031/?accion=editar&simular=exito": 200,
+    "9096/": 200, "8990/": 200, "8990/?accion=editar": 200, "8975/": 200, "8962/": 200,
+    "9150/?rol=jefe": 200, "9150/?rol=jefe&accion=editar": 200, "9150/": 403, "9201/": 403,
+    "99999/": 404, "9031/?vista=error": 200, "9031/?rol=intruso": 200,
+}
 
 
 class _SinRender:
@@ -95,6 +105,8 @@ class ProtoDesarrolloLocalTests(_SinRender, TestCase):
             yield ruta, RUTAS[ruta]
         for qs in ESTADOS_BANDEJA[1:]:
             yield BANDEJA + qs, 200
+        for qs, codigo in ESTADOS_DETALLE.items():
+            yield DETALLE + qs, codigo
 
     def test_rutas_responden_en_desarrollo_local(self):
         for ruta, esperado in self._todas():
@@ -227,6 +239,192 @@ class ProtoBandejaFiltrosTests(_SinRender, TestCase):
         resp = self.client.get(BANDEJA + "?q=%3Cscript%3Ealert(1)%3C/script%3E")
         self.assertNotContains(resp, "<script>alert(1)</script>")
         self.assertContains(resp, "&lt;script&gt;")
+
+
+# --- V2: detalle de ticket -----------------------------------------------------------
+
+from Helpdesk.v2 import proto_views  # noqa: E402  (no importa fixtures directamente)
+
+
+def _ticket(**cambios):
+    base = {"id": 1, "cliente": "Cliente Demo 01", "area": "Soporte", "abierto_por": None,
+            "agente_cierre": None, "estado_categoria": "open", "estado_nombre": "A resolución"}
+    base.update(cambios)
+    return base
+
+
+class AccionesPermitidasTests(TestCase):
+    """Reglas representadas en el contrato de presentación (acciones_permitidas)."""
+
+    def test_cliente_nunca_puede_editar_ni_resolver(self):
+        for categoria in ("open", None, "resolved", "not_applicable"):
+            a = proto_views.acciones_permitidas("cliente", _ticket(estado_categoria=categoria))
+            with self.subTest(categoria=categoria):
+                self.assertTrue(a["ver"])
+                self.assertFalse(a["editar"])
+                self.assertFalse(a["resolver"])
+                self.assertFalse(a["resolver_visible"])
+                self.assertFalse(a["ver_datos_internos"])
+
+    def test_cliente_no_ve_tickets_de_otro_cliente(self):
+        a = proto_views.acciones_permitidas("cliente", _ticket(cliente="Cliente Demo 99"))
+        self.assertFalse(a["ver"])
+
+    def test_resolver_solo_en_categoria_abierta(self):
+        for rol in ("agente", "jefe"):
+            for categoria, esperado in (("open", True), (None, False), ("resolved", False), ("not_applicable", False)):
+                with self.subTest(rol=rol, categoria=categoria):
+                    a = proto_views.acciones_permitidas(rol, _ticket(estado_categoria=categoria))
+                    self.assertEqual(a["resolver"], esperado)
+
+    def test_sin_clasificar_muestra_resolver_deshabilitado_con_motivo(self):
+        a = proto_views.acciones_permitidas("agente", _ticket(estado_categoria=None, estado_nombre="Anulado"))
+        self.assertTrue(a["resolver_visible"])
+        self.assertFalse(a["resolver"])
+        self.assertIn("Anulado", a["resolver_motivo"])
+
+    def test_cerrados_solo_permiten_corregir_la_solucion(self):
+        for categoria in ("resolved", "not_applicable"):
+            a = proto_views.acciones_permitidas("jefe", _ticket(estado_categoria=categoria))
+            with self.subTest(categoria=categoria):
+                self.assertTrue(a["editar"])
+                self.assertTrue(a["editar_solo_solucion"])
+                self.assertFalse(a["editar_area"])
+
+    def test_area_solo_editable_por_jefe(self):
+        self.assertTrue(proto_views.acciones_permitidas("jefe", _ticket())["editar_area"])
+        self.assertFalse(proto_views.acciones_permitidas("agente", _ticket())["editar_area"])
+
+    def test_alcance_del_agente(self):
+        self.assertTrue(proto_views.acciones_permitidas("agente", _ticket(area="Soporte"))["ver"])
+        self.assertTrue(proto_views.acciones_permitidas("agente", _ticket(area="Ventas", abierto_por="Agente Demo 02"))["ver"])
+        self.assertTrue(proto_views.acciones_permitidas("agente", _ticket(area=None, agente_cierre="Agente Demo 02"))["ver"])
+        self.assertFalse(proto_views.acciones_permitidas("agente", _ticket(area="Ventas"))["ver"])
+        self.assertFalse(proto_views.acciones_permitidas("agente", _ticket(area=None))["ver"])
+
+    def test_no_existen_reabrir_cerrar_como_no_aplica_ni_eliminar(self):
+        a = proto_views.acciones_permitidas("jefe", _ticket(estado_categoria="resolved"))
+        for clave in a:
+            with self.subTest(clave=clave):
+                self.assertNotRegex(clave, r"reabrir|no_aplica|eliminar|borrar")
+
+
+@override_settings(ROOT_URLCONF=URLS_ON, DEBUG=True)
+class ProtoDetalleTicketTests(_SinRender, TestCase):
+    def _html(self, qs, codigo=200):
+        resp = self.client.get(DETALLE + qs)
+        self.assertEqual(resp.status_code, codigo)
+        return resp, resp.content.decode()
+
+    def test_agente_ve_resolver_y_editar(self):
+        _, html = self._html("9031/")
+        self.assertIn('href="/_proto/tickets/9031/?rol=agente&amp;accion=resolver"', html)
+        self.assertIn(">Editar<", html.replace("\n", ""))
+
+    def test_una_sola_accion_primaria_en_la_cabecera(self):
+        _, html = self._html("9031/")
+        cabecera = html.split('class="detail-layout"')[0]
+        self.assertEqual(cabecera.count("btn--primary"), 1)
+
+    def test_cliente_solo_lectura(self):
+        _, html = self._html("9031/?rol=cliente")
+        self.assertNotIn("accion=resolver", html)
+        self.assertNotIn("accion=editar", html)
+        self.assertIn("Aún no hay una solución", html)
+
+    def test_cliente_que_fuerza_accion_por_url_no_ve_el_formulario(self):
+        resp, html = self._html("9031/?rol=cliente&accion=resolver")
+        self.assertNotIn('id="f-solucion"', html)
+        self.assertContains(resp, "Esta acción no está disponible")
+
+    def test_sin_clasificar_no_ofrece_formulario_de_resolucion(self):
+        resp, html = self._html("9096/?accion=resolver")
+        self.assertNotIn('id="f-solucion"', html)
+        self.assertIn("disabled aria-describedby=\"motivo-resolver\"", html)
+        self.assertContains(resp, "está sin clasificar")
+
+    def test_formulario_resolver_sin_post_y_sin_campos_con_nombre(self):
+        _, html = self._html("9031/?accion=resolver")
+        form = html.split('data-proto-form')[1].split("</form>")[0]
+        self.assertNotRegex(form.lower(), r'method="post"')
+        nombres = set(re.findall(r'name="([^"]+)"', form))
+        self.assertEqual(nombres, {"rol", "accion", "simular"})
+        self.assertNotRegex(form, r"<textarea[^>]*\bname=")
+
+    def test_agente_de_cierre_nunca_es_un_selector(self):
+        _, html = self._html("9031/?accion=resolver")
+        self.assertIn("Tú · Agente Demo 02", html)
+        self.assertNotRegex(html, r'<select[^>]*(cierre|closure)')
+
+    def test_solucion_obligatoria_sin_largo_minimo(self):
+        _, html = self._html("9031/?accion=resolver")
+        textarea = re.search(r'<textarea[^>]*id="f-solucion"[^>]*>', html).group(0)
+        self.assertIn("data-required", textarea)
+        self.assertNotIn("minlength", textarea)
+        self.assertNotIn("20 caracteres", html)
+
+    def test_errores_de_resolucion_con_resumen_y_campo_enlazado(self):
+        _, html = self._html("9031/?accion=resolver&simular=errores")
+        self.assertIn("data-error-summary", html)
+        self.assertIn('href="#f-solucion"', html)
+        self.assertIn('aria-invalid="true"', html)
+        self.assertIn("f-solucion-error", html)
+        self.assertIn("<title>Error:", html)
+
+    def test_exito_de_resolucion_muestra_ticket_resuelto_simulado(self):
+        _, html = self._html("9031/?accion=resolver&simular=exito")
+        self.assertIn("resuelto (simulado)", html)
+        self.assertIn("status--resolved", html)
+        self.assertNotIn("accion=resolver", html)
+
+    def test_editar_estado_nunca_ofrece_resuelto_sin_clasificar_ni_no_aplica(self):
+        _, html = self._html("9096/?accion=editar")
+        select = re.search(r'<select class="control" id="f-estado".*?</select>', html, re.S).group(0)
+        opciones_habilitadas = re.findall(r"<option(?![^>]*disabled)[^>]*>([^<]+)</option>", select)
+        self.assertEqual(sorted(opciones_habilitadas), sorted(["A resolución", "En espera del cliente", "Escalado a proveedor"]))
+
+    def test_area_editable_solo_para_jefe(self):
+        _, html_agente = self._html("9031/?accion=editar")
+        _, html_jefe = self._html("9031/?rol=jefe&accion=editar")
+        self.assertNotIn('id="f-area"', html_agente)
+        self.assertIn("Solo el Jefe de Mesa puede reasignarla", html_agente)
+        self.assertIn('id="f-area"', html_jefe)
+
+    def test_cerrado_solo_permite_corregir_solucion(self):
+        _, html = self._html("8990/?accion=editar")
+        self.assertIn('id="f-edit-solucion"', html)
+        self.assertNotIn('id="f-asunto"', html)
+
+    def test_resuelto_historico_sin_solucion_se_muestra_sin_inventar_datos(self):
+        _, html = self._html("8975/")
+        self.assertIn("Resuelto · sin solución registrada", html)
+        self.assertIn("No registrado", html)
+
+    def test_triage_avisa_al_jefe(self):
+        _, html = self._html("9150/?rol=jefe")
+        self.assertIn("Pendiente de triage", html)
+
+    def test_agente_fuera_de_alcance_recibe_403_sin_datos_del_ticket(self):
+        resp, html = self._html("9201/", 403)
+        self.assertNotIn("Cotización pendiente", html)
+        self.assertNotIn("Cliente Demo 40", html)
+
+    def test_ticket_inexistente_404(self):
+        _, html = self._html("99999/", 404)
+        self.assertIn("No encontramos ese ticket", html)
+
+    def test_rol_invalido_avisa_y_usa_agente(self):
+        _, html = self._html("9031/?rol=intruso")
+        self.assertIn("Rol de simulación no válido", html)
+        self.assertIn('aria-current="page">Agente</a>', html)
+
+    def test_selector_de_rol_rotulado_como_simulacion(self):
+        _, html = self._html("9031/")
+        self.assertIn("simulación, no es control de acceso", html)
+
+    def test_bandeja_enlaza_al_detalle(self):
+        html = self.client.get(BANDEJA).content.decode()
+        self.assertIn('href="/_proto/tickets/9031/"', html)
 
 
 # --- Reglas estáticas sobre el código fuente ----------------------------------------
