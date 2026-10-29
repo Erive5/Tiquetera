@@ -12,7 +12,11 @@
     <nav>
         <div class="navbar"> 
             <img src="{% static 'img/2.png' %}" alt="Logo" id="logo">
-            <ul class="navList">
+            <button type="button" id="nav_toggle_btn" class="nav_toggle_btn" aria-expanded="false" aria-controls="navList">
+                <i class="fa-solid fa-bars" aria-hidden="true"></i>
+                <span class="sr-only">Abrir menú de navegación</span>
+            </button>
+            <ul class="navList" id="navList">
                 <li class="navItem"><a href="{% url 'home' %}">Inicio</a></li>
                 {% if user.is_authenticated %}
                 <li class="navItem"><a href="{% url 'my_profile' %}">Mi perfil</a></li>
@@ -39,7 +43,7 @@
                     <i alt="Salir" id="logout_button" class="icons fa-solid fa-right-from-bracket"></i>
                 </a></li>
                 {% else %}
-                <li class="navItem"><a href="{% url 'create_ticket' %}">Iniciar sesión</a></li>
+                <li class="navItem"><a href="{% url 'signin' %}">Iniciar sesión</a></li>
                 <li class="navItem"><a href="{% url 'customer_signup' %}">Registrarse</a></li>
                 {% endif %}
             </ul>
@@ -57,5 +61,6 @@
             </a>
         </div>
     </footer>
+    <script src="{% static 'js/nav.js' %}" defer></script>
 </body>
 </html>
