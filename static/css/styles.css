@@ -270,30 +270,305 @@ textarea {
     width: 70%;
 }
 
-.ticket_table{
-    border-radius: 20px;
+/* 4.3C: tokens de 4.1 aplicados a la tabla de tickets (antes usaba
+   colores propios: --color-spacecadet2/--color-primary/
+   --color-spacecadetlight). Mismo patron de reutilizacion ya usado en
+   4.1/4.2, sin inventar valores nuevos. Alineacion: Detalles (icono) y
+   Estado (badge/accion) quedan centrados por ser su primera/ultima
+   columna; el resto se alinea a la izquierda para mejorar la lectura de
+   texto corrido (Asunto, Agente apertura, etc.) frente al centrado
+   anterior, que dificultaba la lectura de textos largos.
+
+   Se usa el modificador .ticket_table--list (no la clase base
+   .ticket_table) porque esa misma clase tambien la usan list_agents.html,
+   list_customers.html y las 4 tablas de catalogo (areas/priorities/
+   statuses/types) -- fuera del alcance autorizado de este incremento
+   (solo el listado de tickets). El modificador se agrega unicamente en
+   list_tickets_head.html y list_tickets_customer.html. */
+.ticket_table--list{
+    border-radius: 12px;
     overflow: hidden;
     width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background-color: var(--color-surface);
+    box-shadow: 0 1px 3px rgba(25, 40, 63, 0.12);
 }
 
-table tr {
-    border: 2px solid var(--color-primary);
+.ticket_table--list tr {
+    border-bottom: 1px solid var(--color-border);
 }
 
-th {
-    background-color: var(--color-spacecadet2);
-    color: var(--color-primary);
+.ticket_table--list tbody tr:last-child {
+    border-bottom: none;
 }
 
-td {
-    background-color: var(--color-spacecadetlight);
+.ticket_table--list th {
+    background-color: var(--color-azul-tinta);
+    color: var(--color-accent-contrast);
+    font-weight: 600;
+    letter-spacing: 0.02em;
 }
 
-th, td {
-    text-align: center;
+.ticket_table--list td {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+.ticket_table--list th,
+.ticket_table--list td {
+    text-align: left;
     font-family: "MiParrafo";
-    font-weight: 100;
-    padding: 10px; /* Ajustar el relleno de las celdas */
+    font-weight: 400;
+    padding: 12px 16px;
+}
+
+.ticket_table--list th:first-child,
+.ticket_table--list td:first-child,
+.ticket_table--list th:last-child,
+.ticket_table--list td:last-child {
+    text-align: center;
+}
+
+/* Badge de estado (ver templates/tickets/_status_badge.html). Reutiliza
+   exactamente los tokens semanticos de 4.1 -- ya elegidos ahi por
+   contraste accesible texto/fondo, sin valores nuevos. */
+.status_badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-family: "MiParrafo";
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status_badge i {
+    font-size: 8px;
+}
+
+.status_badge--success {
+    background-color: var(--color-success-bg);
+    color: var(--color-success-text);
+}
+
+.status_badge--pending {
+    background-color: var(--color-pending-bg);
+    color: var(--color-pending-text);
+}
+
+.status_badge--neutral {
+    background-color: var(--color-neutral-bg);
+    color: var(--color-neutral-text);
+}
+
+/* Enlace semantico "Resolver" (antes <button><a>, mismo patron ya
+   corregido en "Crear ticket" -- ver a.create_button mas abajo).
+   "Resolver" navega por GET a un formulario (solve_ticket), no ejecuta
+   una accion POST desde aqui, por lo que <a> es la semantica correcta. */
+.solve_link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background-color: var(--color-pending);
+    color: var(--color-accent-contrast);
+    text-decoration: none;
+    font-family: "MiParrafo";
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.solve_link:hover {
+    background-color: var(--color-accent-text);
+}
+
+.solve_link i {
+    font-size: 14px;
+}
+
+/* 4.3D: boton colapsable de filtros en movil. Oculto por defecto
+   (display:none) -- el panel de filtros ya es visible por CSS sin este
+   boton, asi que en escritorio el boton no debe aparecer. Solo se
+   muestra (display:flex) dentro del media query movil mas abajo. */
+.filters_toggle_btn {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    font-family: "MiParrafo";
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+.filters_toggle_btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}
+
+.filters_active_dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--color-pending);
+    display: inline-block;
+}
+
+/* 4.3D: tarjetas moviles del listado de tickets. Representacion propia
+   (no una transformacion CSS de <tr>), oculta por defecto en escritorio
+   y mostrada solo dentro del media query movil mas abajo, donde la tabla
+   se oculta a su vez. */
+.ticket_cards {
+    display: none;
+}
+
+.ticket_card {
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background-color: var(--color-surface);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+
+.ticket_card_header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.ticket_card_id {
+    color: var(--color-text-muted);
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.ticket_card_title {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    color: var(--color-text);
+}
+
+.ticket_card_meta {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 12px;
+    margin: 0 0 12px 0;
+}
+
+.ticket_card_meta dt {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    font-weight: 600;
+}
+
+.ticket_card_meta dd {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-text);
+}
+
+.ticket_card_actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.ticket_card_actions a:not(.solve_link) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-accent-text);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+/* 4.3D: media query propia e independiente del listado de tickets.
+   Reutiliza el mismo valor de 768px que el bloque del navbar mas abajo,
+   pero es un bloque fisicamente distinto -- no se toca el navbar ni sus
+   componentes globales. Aqui se intercambia tabla <-> tarjetas y se
+   revela el boton de filtros. */
+@media (max-width: 768px) {
+    .ticket_table--list {
+        display: none;
+    }
+
+    .ticket_cards {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .ticket_card {
+        /* El espaciado entre tarjetas ya lo da el gap de la grilla; sin
+           esto quedaba doble separacion (margin + gap). */
+        margin-bottom: 0;
+    }
+
+    .filters_toggle_btn {
+        display: flex;
+    }
+
+    .filters_container.is-collapsed {
+        display: none;
+    }
+
+    /* 4.3D (correccion visual, revision de capturas): el layout de
+       escritorio de .filters_container -- select_container/input_container
+       en fila (flex sin wrap) mas el boton generico `button` con ancho fijo
+       de 200px -- desbordaba horizontalmente por debajo de 768px. Se apila
+       en una columna y cada control pasa a ancho completo del panel, sin
+       tocar el layout de escritorio (fuera de este media query) ni la
+       logica de filtros/RBAC. */
+    .filters_container {
+        padding: 12px 16px 16px;
+        box-sizing: border-box;
+    }
+
+    .select_container,
+    .input_container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .select_container select,
+    .input_container input,
+    .input_container .filter_button {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        margin: 0 0 10px 0;
+    }
+
+    .input_container .filter_button {
+        margin: 6px 0 0 0;
+    }
+}
+
+/* 4.3D (correccion visual, revision de capturas): a 768px sobra espacio
+   horizontal para 2 tarjetas por fila -- en una sola columna se veian
+   demasiado estiradas con mucho espacio vacio. Se reutiliza el mismo
+   breakpoint de 768px que ya decide tabla vs. tarjetas (bloque de arriba);
+   este bloque anidado solo ajusta cuantas columnas usa la grilla de
+   tarjetas dentro del rango 600-768px, sin tocar esa logica de
+   visibilidad ni el layout de 1 columna de 320-599px (necesario ahi para
+   no apretar el contenido de cada tarjeta). */
+@media (min-width: 600px) and (max-width: 768px) {
+    .ticket_cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
 .user_info_table {

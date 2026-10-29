@@ -1,5 +1,17 @@
-{# Filtro de fecha + botón "Filtrar", compartidos por ambos listados.
-   Incluido dentro de .input_container. Conserva la fecha seleccionada
-   tras enviar el formulario. #}
+{% comment %}
+Filtro de fecha + boton "Filtrar", compartidos por ambos listados.
+Incluido dentro de .input_container. Conserva la fecha seleccionada
+tras enviar el formulario.
+
+4.3B: "Limpiar filtros" tambien se agrega aqui (unico lugar, para los
+2 templates) y solo se muestra si el bloque with de active_filters, en
+el template que incluye este partial, detecto al menos un filtro real
+activo (ver list_tickets_head.html / list_tickets_customer.html). Si
+active_filters no esta definido en el contexto (no deberia ocurrir en
+los 2 usos actuales), el enlace simplemente no se muestra.
+{% endcomment %}
 <input type="date" name="specific_date" placeholder="Fecha específica" value="{{ request.GET.specific_date }}">
 <button class="filter_button" type="submit"><p><i class="fa-solid fa-magnifying-glass"></i> Filtrar</p></button>
+{% if active_filters %}
+<a href="{% url 'tickets' %}">Limpiar filtros</a>
+{% endif %}

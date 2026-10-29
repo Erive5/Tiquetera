@@ -3719,3 +3719,615 @@ class HeadCreateTicketAccessTests(TestCase):
         profile = Profile.objects.create(user=user, rut="43-h2", phone="43h2")
         set_user_role_group(user, ROLE_CLIENTE)
         return user, profile
+
+
+# ---------------------------------------------------------------------------
+# Incremento 4.3B: filtros siempre visibles/editables aunque la busqueda
+# devuelva cero tickets, estados vacios diferenciados (sin filtros vs. con
+# filtros activos), "Limpiar filtros", y correccion del permiso de "Crear
+# ticket" en el estado vacio de list_tickets_head.html.
+# ---------------------------------------------------------------------------
+
+class TicketListEmptyStateTests(TestCase):
+    """Antes de 4.3B, el <form> de filtros (y por lo tanto los valores ya
+    seleccionados) desaparecia por completo si `tickets` (el queryset ya
+    filtrado) quedaba vacio, porque todo el bloque -- filtros y tabla --
+    estaba dentro de un unico {% if tickets %}. Estos tests cubren el
+    cambio: el <form> ahora se renderiza siempre, el mensaje de estado
+    vacio distingue "sin filtros" de "con filtros sin resultados", y
+    aparece "Limpiar filtros" solo cuando hay al menos un filtro real
+    activo -- para los 2 roles con listados distintos."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _jefe(self, suffix="1"):
+        user = User.objects.create_user(username="jefe_vacio_43b_%s@test.cl" % suffix, password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43b-%s" % suffix, phone="43b%s" % suffix)
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def _cliente(self, suffix="1"):
+        user = User.objects.create_user(username="cliente_vacio_43b_%s@test.cl" % suffix, password="x")
+        profile = Profile.objects.create(user=user, rut="43b-c%s" % suffix, phone="43bc%s" % suffix)
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    # --- Jefe de Mesa / Agente (list_tickets_head.html) ---
+
+    def test_jefe_de_mesa_sin_tickets_y_sin_filtros_muestra_formulario_y_mensaje_generico(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('<form method="GET">', content)
+        self.assertIn("No hay tickets registrados", content)
+        self.assertNotIn("No se encontraron tickets con estos filtros", content)
+        self.assertNotIn("Limpiar filtros", content)
+
+    def test_jefe_de_mesa_sin_tickets_con_filtro_activo_muestra_formulario_mensaje_especifico_y_limpiar(self):
+        user, _ = self._jefe("2")
+        self.client.force_login(user)
+        priority = Priority.objects.create(priority_description="Alta-43b")
+        # El filtro no calza con ningun ticket existente (no hay ninguno) ->
+        # queryset vacio, pero con un filtro real activo.
+        resp = self.client.get(reverse("tickets"), {"priority": priority.id})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('<form method="GET">', content)
+        self.assertIn("No se encontraron tickets con estos filtros", content)
+        self.assertNotIn("No hay tickets registrados", content)
+        self.assertIn("Limpiar filtros", content)
+        self.assertIn('href="%s"' % reverse("tickets"), content)
+        # El valor del filtro sigue persistiendo (ya cubierto en 4.3A, se
+        # reconfirma aqui en el contexto del nuevo estado vacio).
+        self.assertIn('value="%s" selected>%s</option>' % (priority.id, priority.priority_description), content)
+
+    def test_jefe_de_mesa_con_tickets_sin_filtros_no_muestra_limpiar_filtros(self):
+        user, profile_jefe = self._jefe("3")
+        _, cliente_profile = self._cliente("3")
+        priority = Priority.objects.create(priority_description="Media-43b")
+        type_ = Type.objects.create(type_description="Consulta-43b")
+        status = Status.objects.create(status_description="A resolución-43b")
+        Ticket.objects.create(
+            issue="Ticket existente sin filtros", priority=priority, type=type_,
+            status=status, customer=cliente_profile, observation="o",
+        )
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("Ticket existente sin filtros", content)
+        self.assertNotIn("Limpiar filtros", content)
+
+    def test_resto_del_listado_de_jefe_de_mesa_intacto_con_cero_resultados(self):
+        # Confirma que el guard de permisos y el resto de la pagina (nav,
+        # footer) no se vieron afectados por la reestructuracion.
+        user, _ = self._jefe("4")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"type": "999999"})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('href="%s"' % reverse("create_ticket"), content)
+        self.assertIn('name="priority"', content)
+        self.assertIn('name="area"', content)
+        self.assertIn('name="opening_agent"', content)
+        self.assertIn('name="closure_agent"', content)
+
+    # --- Cliente (list_tickets_customer.html) ---
+
+    def test_cliente_sin_tickets_y_sin_filtros_muestra_formulario_y_mensaje_generico(self):
+        user, _ = self._cliente("2")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('<form method="GET">', content)
+        self.assertIn("No hay tickets asociados a su cuenta", content)
+        self.assertNotIn("No se encontraron tickets con estos filtros", content)
+        self.assertNotIn("Limpiar filtros", content)
+
+    def test_cliente_sin_tickets_con_filtro_activo_muestra_formulario_mensaje_especifico_y_limpiar(self):
+        user, _ = self._cliente("3")
+        self.client.force_login(user)
+        status = Status.objects.create(status_description="Resuelto-43b")
+        resp = self.client.get(reverse("tickets"), {"status": status.id})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('<form method="GET">', content)
+        self.assertIn("No se encontraron tickets con estos filtros", content)
+        self.assertNotIn("No hay tickets asociados a su cuenta", content)
+        self.assertIn("Limpiar filtros", content)
+        # Cliente nunca ve estos filtros -- se mantiene la diferencia de rol.
+        self.assertNotIn('name="priority"', content)
+        self.assertNotIn('name="area"', content)
+        self.assertNotIn('name="opening_agent"', content)
+        self.assertNotIn('name="closure_agent"', content)
+
+    def test_cliente_con_tickets_sin_filtros_no_muestra_limpiar_filtros(self):
+        user, profile = self._cliente("4")
+        type_ = Type.objects.create(type_description="Reclamo-43b")
+        status = Status.objects.create(status_description="A resolución-43b-cliente")
+        Ticket.objects.create(
+            issue="Ticket cliente sin filtros", priority=Priority.objects.create(priority_description="Baja-43b"),
+            type=type_, status=status, customer=profile, observation="o",
+        )
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("Ticket cliente sin filtros", content)
+        self.assertNotIn("Limpiar filtros", content)
+
+
+class HeadEmptyStateCreateTicketLinkTests(TestCase):
+    """4.3B: corrige el enlace "Crear ticket" del estado vacio de
+    list_tickets_head.html -- antes era <button><a> incondicional (sin
+    class="create_button" ni guard de permiso); ahora debe ser el mismo
+    <a class="create_button"> condicionado a perms.Helpdesk.add_ticket que
+    ya se usa en el resto del listado y en list_tickets_customer.html."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _jefe(self, suffix="1"):
+        user = User.objects.create_user(username="jefe_empty_link_43b_%s@test.cl" % suffix, password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43b-e%s" % suffix, phone="43be%s" % suffix)
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def test_con_permiso_el_enlace_semantico_aparece_en_el_estado_vacio(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('<a class="create_button" href="%s">' % reverse("create_ticket"), content)
+        self.assertNotIn("<button><a", content)
+
+    def test_sin_permiso_add_ticket_el_enlace_no_aparece_en_el_estado_vacio(self):
+        user, _ = self._jefe("2")
+        jefe_group = Group.objects.get(name=ROLE_JEFE_DE_MESA)
+        add_ticket_perm = Permission.objects.get(codename="add_ticket", content_type__app_label="Helpdesk")
+        jefe_group.permissions.remove(add_ticket_perm)
+
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertNotIn('href="%s"' % reverse("create_ticket"), content)
+        # El resto del estado vacio sigue presente -- el guard solo retira
+        # el enlace, no afecta el mensaje ni la pagina.
+        self.assertIn("No hay tickets registrados", content)
+
+
+class ActiveFiltersEdgeCaseTests(TestCase):
+    """Verificacion de cierre de 4.3B: confirma que active_filters no da
+    falsos positivos ni falsos negativos frente a parametros GET ausentes
+    vs. presentes-pero-vacios (el caso real cuando se envia el formulario
+    sin seleccionar nada: los <select>/<input> SI viajan en la querystring,
+    pero con valor vacio)."""
+
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _jefe(self):
+        user = User.objects.create_user(username="jefe_edge_43b@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43b-edge1", phone="43bedge1")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def _cliente(self):
+        user = User.objects.create_user(username="cliente_edge_43b@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut="43b-edge2", phone="43bedge2")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def test_jefe_de_mesa_querystring_con_todos_los_campos_presentes_pero_vacios_no_activa_filtros(self):
+        # Simula el envio real del <form> sin que el usuario haya elegido
+        # nada: todos los parametros viajan en la URL, pero vacios.
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {
+            "priority": "", "type": "", "status": "", "area": "",
+            "opening_agent": "", "closure_agent": "", "specific_date": "",
+        })
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("No hay tickets registrados", content)
+        self.assertNotIn("No se encontraron tickets con estos filtros", content)
+        self.assertNotIn("Limpiar filtros", content)
+
+    def test_cliente_querystring_con_todos_los_campos_presentes_pero_vacios_no_activa_filtros(self):
+        user, _ = self._cliente()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"type": "", "status": "", "specific_date": ""})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("No hay tickets asociados a su cuenta", content)
+        self.assertNotIn("No se encontraron tickets con estos filtros", content)
+        self.assertNotIn("Limpiar filtros", content)
+
+    def test_jefe_de_mesa_un_solo_campo_con_valor_real_entre_varios_vacios_si_activa_filtros(self):
+        # Un solo filtro con valor real, mezclado con el resto vacio (igual
+        # que si el usuario solo llenara un campo del formulario completo).
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {
+            "priority": "", "type": "", "status": "", "area": "",
+            "opening_agent": "Pérez", "closure_agent": "", "specific_date": "",
+        })
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("No se encontraron tickets con estos filtros", content)
+        self.assertIn("Limpiar filtros", content)
+
+
+# ---------------------------------------------------------------------------
+# Incremento 4.3C: rediseño visual del listado de tickets en escritorio
+# (tokens de 4.1, badges de estado, scope="col", enlace semantico
+# "Resolver"). Sin cambios de RBAC/logica de negocio -- estos tests
+# verifican presentacion y semantica, no comportamiento ya cubierto en
+# 4.3A/4.3B.
+# ---------------------------------------------------------------------------
+
+class TicketListVisualRedesignTests(TestCase):
+
+    def setUp(self):
+        call_command("seed_roles")
+        self.priority = Priority.objects.create(priority_description="Alta-43c")
+        self.type = Type.objects.create(type_description="Consulta-43c")
+
+    def _jefe(self):
+        user = User.objects.create_user(username="jefe_43c@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43c-1", phone="43c1")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def _cliente(self, suffix="2"):
+        user = User.objects.create_user(username="cliente_43c_%s@test.cl" % suffix, password="x")
+        profile = Profile.objects.create(user=user, rut="43c-%s" % suffix, phone="43c%s" % suffix)
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def _ticket(self, customer_profile, status_description, **extra):
+        status = Status.objects.create(status_description=status_description)
+        return Ticket.objects.create(
+            issue="Ticket %s" % status_description, priority=self.priority, type=self.type,
+            status=status, customer=customer_profile, observation="o", **extra
+        )
+
+    def test_jefe_de_mesa_scope_col_en_todos_los_encabezados(self):
+        user, _ = self._jefe()
+        _, cliente_profile = self._cliente("scope1")
+        self._ticket(cliente_profile, "A resolución-43c-scope1")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"priority": self.priority.id})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertEqual(content.count("<th scope=\"col\">"), 9)
+        self.assertNotIn("<th>", content)
+
+    def test_cliente_scope_col_en_todos_los_encabezados(self):
+        user, profile = self._cliente("scope2")
+        self._ticket(profile, "A resolución-43c-scope2")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"type": self.type.id})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertEqual(content.count("<th scope=\"col\">"), 8)
+        self.assertNotIn("<th>", content)
+
+    def test_jefe_de_mesa_badge_resuelto_sin_boton_resolver(self):
+        _, cliente_profile = self._cliente("r1")
+        self._ticket(cliente_profile, "Resuelto")
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('<span class="status_badge status_badge--success">', content)
+        self.assertNotIn("Resolver", content)
+
+    def test_jefe_de_mesa_badge_no_aplica_sin_boton_resolver(self):
+        _, cliente_profile = self._cliente("r2")
+        status = Status.objects.create(status_description="No aplica")
+        Ticket.objects.create(
+            issue="Ticket no aplica", priority=self.priority, type=self.type,
+            status=status, customer=cliente_profile, observation="o",
+        )
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('<span class="status_badge status_badge--neutral">', content)
+        self.assertNotIn("Resolver", content)
+
+    def test_jefe_de_mesa_estado_pendiente_muestra_badge_y_enlace_semantico_resolver(self):
+        _, cliente_profile = self._cliente("r3")
+        status = Status.objects.create(status_description="A resolución-43c-pendiente")
+        ticket = Ticket.objects.create(
+            issue="Ticket pendiente", priority=self.priority, type=self.type,
+            status=status, customer=cliente_profile, observation="o",
+        )
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('<span class="status_badge status_badge--pending">', content)
+        self.assertIn('<a class="solve_link" href="%s">' % reverse("solve_ticket", args=[ticket.id]), content)
+        # Ya no queda el patron invalido <button><a> para Resolver.
+        self.assertNotIn("<button><a", content)
+
+    def test_cliente_nunca_ve_boton_resolver_con_cualquier_estado(self):
+        user, profile = self._cliente("r4")
+        self._ticket(profile, "A resolución-43c-cliente")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('<span class="status_badge status_badge--pending">', content)
+        self.assertNotIn("Resolver", content)
+        self.assertNotIn("solve_link", content)
+
+    def test_resolver_sigue_siendo_navegacion_get_no_un_boton_post(self):
+        # El enlace "Resolver" del listado navega (GET) a solve_ticket, que
+        # renderiza un formulario -- no ejecuta ninguna accion por si
+        # mismo. Confirma que la pagina de destino sigue respondiendo 200
+        # para quien tiene el permiso, sin que el cambio de <button> a <a>
+        # haya alterado esa navegacion.
+        _, cliente_profile = self._cliente("r5")
+        status = Status.objects.create(status_description="A resolución-43c-nav")
+        ticket = Ticket.objects.create(
+            issue="Ticket para navegacion", priority=self.priority, type=self.type,
+            status=status, customer=cliente_profile, observation="o",
+        )
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("solve_ticket", args=[ticket.id]))
+        self.assertEqual(resp.status_code, 200)
+
+    def test_jefe_de_mesa_columnas_filtros_y_permisos_intactos_tras_el_rediseno(self):
+        # No se tocaron columnas, filtros ni RBAC -- se reconfirma junto
+        # con el rediseño visual.
+        user, _ = self._jefe()
+        _, cliente_profile = self._cliente("cols")
+        self._ticket(cliente_profile, "A resolución-43c-cols")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        for col in ["Detalles", "Id", "Prioridad", "Asunto", "Agente apertura",
+                    "Fecha Apertura", "Tipo", "Área", "Estado"]:
+            self.assertIn(col, content)
+        self.assertIn('name="priority"', content)
+        self.assertIn('name="area"', content)
+        self.assertIn('name="opening_agent"', content)
+        self.assertIn('name="closure_agent"', content)
+        self.assertIn('href="%s"' % reverse("create_ticket"), content)
+
+    def test_otras_tablas_del_proyecto_no_reciben_el_modificador_de_estilo(self):
+        # .ticket_table--list es exclusivo de los 2 listados de tickets --
+        # list_agents.html/list_customers.html siguen con solo .ticket_table.
+        jefe_user, _ = self._jefe()
+        self.client.force_login(jefe_user)
+        resp = self.client.get(reverse("agents"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("ticket_table--list", resp.content.decode())
+
+
+class TicketListMobileCardsAndFiltersToggleTests(TestCase):
+    """4.3D: tarjetas moviles independientes + boton colapsable de
+    filtros. Django tests no ejecutan CSS/media queries, asi que estas
+    pruebas verifican el HTML generado (ambas representaciones conviven
+    en el DOM, intercambiadas solo por CSS), no el comportamiento visual
+    a un ancho de viewport concreto -- eso se deja para la guia manual en
+    Chrome."""
+
+    def setUp(self):
+        call_command("seed_roles")
+        self.priority = Priority.objects.create(priority_description="Alta-43d")
+        self.type = Type.objects.create(type_description="Consulta-43d")
+
+    def _jefe(self):
+        user = User.objects.create_user(username="jefe_43d@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43d-1", phone="43d1")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    def _agente(self, suffix="ag"):
+        user = User.objects.create_user(username="agente_43d_%s@test.cl" % suffix, password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut="43d-ag-%s" % suffix, phone="43dag%s" % suffix)
+        set_user_role_group(user, ROLE_AGENTE)
+        return user, profile
+
+    def _cliente(self, suffix="2"):
+        user = User.objects.create_user(username="cliente_43d_%s@test.cl" % suffix, password="x")
+        profile = Profile.objects.create(user=user, rut="43d-%s" % suffix, phone="43d%s" % suffix)
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def _ticket(self, customer_profile, status_description, **extra):
+        status = Status.objects.create(status_description=status_description)
+        return Ticket.objects.create(
+            issue="Ticket %s" % status_description, priority=self.priority, type=self.type,
+            status=status, customer=customer_profile, observation="o", **extra
+        )
+
+    # --- boton de filtros: presencia y atributos ARIA ---
+
+    def test_jefe_de_mesa_boton_filtros_tiene_aria_expanded_y_aria_controls(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('id="filters_toggle_btn"', content)
+        self.assertIn('aria-controls="filters_container"', content)
+        self.assertIn('aria-expanded="true"', content)
+        self.assertIn('id="filters_container"', content)
+
+    def test_cliente_boton_filtros_tiene_aria_expanded_y_aria_controls(self):
+        user, profile = self._cliente("btn1")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('id="filters_toggle_btn"', content)
+        self.assertIn('aria-controls="filters_container"', content)
+        self.assertIn('aria-expanded="true"', content)
+        self.assertIn('id="filters_container"', content)
+
+    def test_jefe_de_mesa_sin_filtros_activos_no_muestra_indicador(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        self.assertNotIn("filters_active_dot", resp.content.decode())
+
+    def test_jefe_de_mesa_con_filtro_activo_muestra_indicador(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"priority": self.priority.id})
+        self.assertIn("filters_active_dot", resp.content.decode())
+
+    def test_cliente_con_filtro_activo_muestra_indicador(self):
+        user, _ = self._cliente("btn2")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"type": self.type.id})
+        self.assertIn("filters_active_dot", resp.content.decode())
+
+    # --- tarjetas moviles: contenido por rol ---
+
+    def test_jefe_de_mesa_tarjeta_movil_incluye_id_asunto_badge_y_detalles(self):
+        _, cliente_profile = self._cliente("card1")
+        ticket = self._ticket(cliente_profile, "A resolución-43d-card1")
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('class="ticket_cards"', content)
+        self.assertIn('class="ticket_card"', content)
+        self.assertIn('class="ticket_card_id">#%s' % ticket.id, content)
+        self.assertIn('class="ticket_card_title">%s' % ticket.issue, content)
+        self.assertIn('<span class="status_badge status_badge--pending">', content)
+        self.assertIn('href="%s"' % reverse("ticket_view", args=[ticket.id]), content)
+
+    def test_jefe_de_mesa_tarjeta_movil_incluye_resolver_si_corresponde(self):
+        _, cliente_profile = self._cliente("card2")
+        ticket = self._ticket(cliente_profile, "A resolución-43d-card2")
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('<a class="solve_link" href="%s">' % reverse("solve_ticket", args=[ticket.id]), content)
+
+    def test_jefe_de_mesa_tarjeta_movil_resuelto_no_incluye_resolver(self):
+        _, cliente_profile = self._cliente("card3")
+        ticket = self._ticket(cliente_profile, "Resuelto")
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('class="ticket_card"', content)
+        self.assertNotIn("solve_link", content)
+
+    def test_cliente_tarjeta_movil_nunca_incluye_resolver(self):
+        user, profile = self._cliente("card4")
+        ticket = self._ticket(profile, "A resolución-43d-card4")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('class="ticket_cards"', content)
+        self.assertIn('class="ticket_card_id">#%s' % ticket.id, content)
+        self.assertNotIn("solve_link", content)
+        self.assertNotIn("Resolver", content)
+
+    def test_agente_tarjeta_movil_nunca_incluye_resolver_para_estado_resuelto(self):
+        _, cliente_profile = self._cliente("card5")
+        user, agent_profile = self._agente()
+        # agent_ticket_scope_q solo da acceso a tickets donde el agente
+        # participa como apertura/cierre, o (si tiene area) que caen en su
+        # area -- un ticket sin ninguno de esos datos no seria visible.
+        ticket = self._ticket(cliente_profile, "Resuelto", opening_agent=agent_profile)
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('class="ticket_card"', content)
+        self.assertNotIn("solve_link", content)
+
+    def test_tabla_de_escritorio_sigue_presente_junto_a_las_tarjetas(self):
+        # 4.3D no reemplaza la tabla de escritorio -- ambas conviven en
+        # el mismo HTML, la eleccion entre una u otra es puramente CSS.
+        _, cliente_profile = self._cliente("card6")
+        self._ticket(cliente_profile, "A resolución-43d-card6")
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('class="ticket_table ticket_table--list"', content)
+        self.assertIn('class="ticket_cards"', content)
+
+    # --- persistencia GET y "Limpiar filtros" de 4.3B, intactas ---
+
+    def test_limpiar_filtros_sigue_presente_con_filtro_activo(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"priority": self.priority.id})
+        self.assertIn("Limpiar filtros", resp.content.decode())
+
+    def test_filtro_select_mantiene_valor_seleccionado(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"), {"priority": self.priority.id})
+        content = resp.content.decode()
+        self.assertIn(
+            '<option value="%s" selected>' % self.priority.id, content
+        )
+
+    # --- sin tickets: ni boton de filtros roto ni tarjetas vacias ---
+
+    def test_estado_vacio_no_incluye_marcado_de_tarjetas(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertIn('id="filters_toggle_btn"', content)
+        self.assertNotIn('class="ticket_cards"', content)
+        self.assertNotIn('class="ticket_table ticket_table--list"', content)
+
+    # --- correccion de comentarios Django {# #} multilinea mal formados:
+    # ese delimitador no admite saltos de linea (el regex de tokenizacion
+    # de Django no usa DOTALL), asi que un {# #} que no cierra en la misma
+    # linea no se reconoce como tag y se imprime literalmente. Se
+    # reemplazaron por bloques {% comment %}...{% endcomment %}, que si
+    # soportan multiples lineas. Estas pruebas confirman que la marca de
+    # apertura ya no aparece como texto literal en ningun listado, con y
+    # sin tickets (las dos ramas de {% if tickets %} incluyen esos
+    # comentarios en su alcance).
+
+    def test_jefe_de_mesa_sin_tickets_no_muestra_comentarios_django_literales(self):
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertNotIn("{#", content)
+
+    def test_jefe_de_mesa_con_tickets_no_muestra_comentarios_django_literales(self):
+        _, cliente_profile = self._cliente("cmt1")
+        self._ticket(cliente_profile, "A resolución-43d-cmt1")
+        user, _ = self._jefe()
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertNotIn("{#", content)
+
+    def test_cliente_sin_tickets_no_muestra_comentarios_django_literales(self):
+        user, _ = self._cliente("cmt2")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertNotIn("{#", content)
+
+    def test_cliente_con_tickets_no_muestra_comentarios_django_literales(self):
+        user, profile = self._cliente("cmt3")
+        self._ticket(profile, "A resolución-43d-cmt3")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("tickets"))
+        content = resp.content.decode()
+        self.assertNotIn("{#", content)

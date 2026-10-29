@@ -1,4 +1,5 @@
-{% extends "base.html" %} 
+{% extends "base.html" %}
+{% load static %}
 {% block title %} Gestión Tickets {% endblock %}
 
 {% block content %} 
@@ -8,9 +9,33 @@
   </div>
   
   <div class="content_box">
-    {% if tickets %}
+    {% comment %}
+    4.3B: cada clave de request.GET se extrae primero como variable
+    simple (gp/gt/...); una clave QueryDict ausente usada como
+    ARGUMENTO de un filtro (ej. `add:request.GET.type`) lanza
+    VariableDoesNotExist en Django -- solo la resolucion de la
+    variable base de una expresion es tolerante a claves ausentes.
+    Por eso se resuelve cada una por separado antes de combinarlas
+    en un solo `active_filters`, calculado una sola vez.
+    {% endcomment %}
+    {% with gp=request.GET.priority gt=request.GET.type gs=request.GET.status ga=request.GET.area goa=request.GET.opening_agent gca=request.GET.closure_agent gsd=request.GET.specific_date %}
+    {% with active_filters=gp|add:gt|add:gs|add:ga|add:goa|add:gca|add:gsd %}
+    {% comment %}
+    4.3D: boton semantico que colapsa/expande el panel de filtros solo en
+    movil. El panel es visible y funcional por defecto (sin esto, sin JS):
+    este boton y filters_toggle.js son una mejora progresiva, no un
+    requisito para usar los filtros. Ver filters_toggle.js para el
+    comportamiento de aria-expanded/foco/Escape.
+    {% endcomment %}
+    <button type="button" id="filters_toggle_btn" class="filters_toggle_btn" aria-expanded="true" aria-controls="filters_container">
+      <i class="fa-solid fa-filter"></i> Filtros
+      {% if active_filters %}
+      <span class="filters_active_dot" aria-hidden="true"></span>
+      <span class="sr-only">(hay filtros activos)</span>
+      {% endif %}
+    </button>
     <form method="GET">
-    <div class="filters_container">
+    <div class="filters_container" id="filters_container">
       <p> Al filtrar por agentes, usted puede ingresar el nombre ó apellido</p>
       <div class="select_container">
         <select name="priority">
@@ -37,21 +62,23 @@
       </div> <!-- input container end-->
     </div>  <!-- filters container end -->
   </form>
+
+    {% if tickets %}
     {% if perms.Helpdesk.add_ticket %}
     <a class="create_button" href="{% url 'create_ticket' %}"><i class="fa-solid fa-plus"></i> Crear ticket</a>
     {% endif %}
-      <table class="ticket_table">
+      <table class="ticket_table ticket_table--list">
         <thead>
           <tr>
-            <th>Detalles</th>
-            <th>Id</th>
-            <th>Prioridad</th>
-            <th>Asunto</th>
-            <th>Agente apertura</th>
-            <th>Fecha Apertura</th>
-            <th>Tipo</th>
-            <th>Área</th>
-            <th >Estado</th>
+            <th scope="col">Detalles</th>
+            <th scope="col">Id</th>
+            <th scope="col">Prioridad</th>
+            <th scope="col">Asunto</th>
+            <th scope="col">Agente apertura</th>
+            <th scope="col">Fecha Apertura</th>
+            <th scope="col">Tipo</th>
+            <th scope="col">Área</th>
+            <th scope="col">Estado</th>
           </tr>
         </thead>
         <tbody>
@@ -67,28 +94,73 @@
             <td>{{ ticket.opening_date|date:"d/m/Y" }}</td>
             <td>{{ ticket.type }}</td>
             <td>{{ ticket.asigned_area }}</td>
-            <td> 
-              {% if ticket.status.status_description == "Resuelto" %}
-              <p>Resuelto</p>
-              {% elif ticket.status.status_description == "No aplica" %}
-              <p>No aplica</p>
-              {% else %}
-              <button><a href="{% url 'solve_ticket' ticket.id %}"><i class="fa-solid fa-check"></i> Resolver</a></button>
+            <td>
+              {% include "tickets/_status_badge.html" %}
+              {% if ticket.status.status_description != "Resuelto" and ticket.status.status_description != "No aplica" %}
+              <a class="solve_link" href="{% url 'solve_ticket' ticket.id %}"><i class="fa-solid fa-check"></i> Resolver</a>
               {% endif %}
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
+      {% comment %}
+      4.3D: representacion movil independiente y compacta (no una
+      transformacion CSS de las filas de la tabla). Oculta por defecto en
+      escritorio y mostrada solo bajo el media query de 768px en
+      styles.css; la tabla de arriba se oculta ahi mismo en ese mismo
+      breakpoint. Mismas condiciones de permisos/estado que la tabla:
+      Resolver solo si el estado no es Resuelto ni No aplica.
+      {% endcomment %}
+      <div class="ticket_cards">
+        {% for ticket in tickets %}
+        <div class="ticket_card">
+          <div class="ticket_card_header">
+            <span class="ticket_card_id">#{{ ticket.id }}</span>
+            {% include "tickets/_status_badge.html" %}
+          </div>
+          <h3 class="ticket_card_title">{{ ticket.issue }}</h3>
+          <dl class="ticket_card_meta">
+            <div>
+              <dt>Prioridad</dt>
+              <dd>{{ ticket.priority }}</dd>
+            </div>
+            <div>
+              <dt>Tipo</dt>
+              <dd>{{ ticket.type }}</dd>
+            </div>
+            <div>
+              <dt>Fecha apertura</dt>
+              <dd>{{ ticket.opening_date|date:"d/m/Y" }}</dd>
+            </div>
+          </dl>
+          <div class="ticket_card_actions">
+            <a href="{% url 'ticket_view' ticket.id %}" title="Ver detalles ticket"><i class="fa-solid fa-clipboard-list"></i> Detalles</a>
+            {% if ticket.status.status_description != "Resuelto" and ticket.status.status_description != "No aplica" %}
+            <a class="solve_link" href="{% url 'solve_ticket' ticket.id %}"><i class="fa-solid fa-check"></i> Resolver</a>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div> <!-- ticket cards end -->
     {% else %}
     <div class="rol_box no_tickets">
       <h3>¡UPS!</h3>
+      {% if active_filters %}
+      <h3>No se encontraron tickets con estos filtros</h3>
+      {% else %}
       <h3>No hay tickets registrados</h3>
+      {% endif %}
       <i class="fa-solid fa-face-dizzy"></i>
       <br>
-      <button><a href="{% url 'create_ticket' %}"><i class="fa-solid fa-plus"></i> Crear ticket</a></button>
+      {% if perms.Helpdesk.add_ticket %}
+      <a class="create_button" href="{% url 'create_ticket' %}"><i class="fa-solid fa-plus"></i> Crear ticket</a>
+      {% endif %}
     </div> <!-- no tickets container end-->
     {% endif %}
+    {% endwith %}
+    {% endwith %}
   </div><!-- content box end -->
 </div> <!-- container end -->
+<script src="{% static 'js/filters_toggle.js' %}" defer></script>
 {% endblock %}

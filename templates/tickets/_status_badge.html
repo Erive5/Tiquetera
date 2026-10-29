@@ -1,0 +1,16 @@
+{% comment %}
+4.3C: badge de estado reutilizado por list_tickets_head.html y
+list_tickets_customer.html. Centraliza en un solo lugar el mapeo
+estado -> color/texto (antes duplicado, identico, en ambos templates),
+usando exclusivamente los tokens semanticos ya definidos en 4.1
+(--color-success-*/--color-pending-*/--color-neutral-*). No decide nada
+de RBAC ni de logica de negocio -- solo presenta `ticket.status`, que ya
+llega igual en ambos templates via el mismo queryset de views.py.
+{% endcomment %}
+{% if ticket.status.status_description == "Resuelto" %}
+<span class="status_badge status_badge--success"><i class="fa-solid fa-circle"></i> Resuelto</span>
+{% elif ticket.status.status_description == "No aplica" %}
+<span class="status_badge status_badge--neutral"><i class="fa-solid fa-circle"></i> No aplica</span>
+{% else %}
+<span class="status_badge status_badge--pending"><i class="fa-solid fa-circle"></i> A resolución</span>
+{% endif %}

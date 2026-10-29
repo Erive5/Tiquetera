@@ -1,8 +1,10 @@
-{# Filtros compartidos por list_tickets_head.html y list_tickets_customer.html.
-   Incluido dentro de .select_container en ambos templates. Conserva el valor
-   seleccionado tras enviar el formulario (request.GET), sin tocar views.py:
-   el context processor 'django.template.context_processors.request' ya
-   expone `request` en todos los templates. #}
+{% comment %}
+Filtros compartidos por list_tickets_head.html y list_tickets_customer.html.
+Incluido dentro de .select_container en ambos templates. Conserva el valor
+seleccionado tras enviar el formulario (request.GET), sin tocar views.py:
+el context processor 'django.template.context_processors.request' ya
+expone `request` en todos los templates.
+{% endcomment %}
 <select name="type">
   <option value="">Tipo</option>
   {% for type in types %}
