@@ -12,4 +12,8 @@ urlpatterns = [
     path("no-incluido/", proto_views.fuera_de_alcance, name="fuera_de_alcance"),
     path("sistema/", proto_views.sistema, name="sistema"),
     path("tickets/<int:ticket_id>/", proto_views.ticket_detalle, name="ticket_detalle"),
+    # V3
+    path("cliente/tickets/", proto_views.cliente_tickets, name="cliente_tickets"),
+    path("jefe/tickets/", proto_views.jefe_tickets, name="jefe_tickets"),
+    path("jefe/triage/", proto_views.jefe_triage, name="jefe_triage"),
 ]

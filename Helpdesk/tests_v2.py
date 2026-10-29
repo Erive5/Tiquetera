@@ -43,6 +43,9 @@ RUTAS = {
     "/_proto/no-incluido/": 200,
     "/_proto/sistema/": 200,
     "/_proto/tickets/9031/": 200,
+    "/_proto/cliente/tickets/": 200,
+    "/_proto/jefe/tickets/": 200,
+    "/_proto/jefe/triage/": 200,
 }
 ESTADOS_BANDEJA = ["", "?vista=vacio", "?vista=error", "?q=zzz", "?prioridad=alta&tipo=reclamo",
                    "?estado=sin-clasificar", "?pagina=3", "?orden=antiguedad"]
@@ -55,6 +58,17 @@ ESTADOS_DETALLE = {
     "9096/": 200, "8990/": 200, "8990/?accion=editar": 200, "8975/": 200, "8962/": 200,
     "9150/?rol=jefe": 200, "9150/?rol=jefe&accion=editar": 200, "9150/": 403, "9201/": 403,
     "99999/": 404, "9031/?vista=error": 200, "9031/?rol=intruso": 200,
+}
+ESTADOS_V3 = {
+    "/_proto/cliente/tickets/?pestana=finalizados": 200, "/_proto/cliente/tickets/?pestana=todos": 200,
+    "/_proto/cliente/tickets/?q=zzz": 200, "/_proto/cliente/tickets/?vista=vacio": 200,
+    "/_proto/cliente/tickets/?vista=error": 200, "/_proto/cliente/tickets/?pestana=xx": 200,
+    "/_proto/cliente/tickets/?rol=agente": 403, "/_proto/cliente/tickets/?rol=jefe": 403,
+    "/_proto/jefe/tickets/?area=sin-asignar&prioridad=alta": 200, "/_proto/jefe/tickets/?estado=cat-sin-clasificar": 200,
+    "/_proto/jefe/tickets/?pagina=4": 200, "/_proto/jefe/tickets/?area=Marte&estado=zz&pagina=x": 200,
+    "/_proto/jefe/tickets/?vista=error": 200, "/_proto/jefe/tickets/?rol=cliente": 403, "/_proto/jefe/tickets/?rol=agente": 403,
+    "/_proto/jefe/triage/?vista=vacio": 200, "/_proto/jefe/triage/?vista=error": 200,
+    "/_proto/jefe/triage/?rol=agente": 403, "/_proto/jefe/triage/?rol=cliente": 403,
 }
 
 
@@ -107,6 +121,8 @@ class ProtoDesarrolloLocalTests(_SinRender, TestCase):
             yield BANDEJA + qs, 200
         for qs, codigo in ESTADOS_DETALLE.items():
             yield DETALLE + qs, codigo
+        for ruta, codigo in ESTADOS_V3.items():
+            yield ruta, codigo
 
     def test_rutas_responden_en_desarrollo_local(self):
         for ruta, esperado in self._todas():
@@ -425,6 +441,144 @@ class ProtoDetalleTicketTests(_SinRender, TestCase):
     def test_bandeja_enlaza_al_detalle(self):
         html = self.client.get(BANDEJA).content.decode()
         self.assertIn('href="/_proto/tickets/9031/"', html)
+
+
+# --- V3: bandejas de Cliente y Jefe de Mesa ----------------------------------------------
+
+CLIENTE = "/_proto/cliente/tickets/"
+JEFE = "/_proto/jefe/tickets/"
+TRIAGE = "/_proto/jefe/triage/"
+
+
+@override_settings(ROOT_URLCONF=URLS_ON, DEBUG=True)
+class ProtoClienteTicketsTests(_SinRender, TestCase):
+    def test_solo_muestra_tickets_del_cliente_simulado(self):
+        for pestana in ("abiertos", "finalizados", "todos"):
+            resp = self.client.get(CLIENTE + f"?pestana={pestana}")
+            with self.subTest(pestana=pestana):
+                self.assertTrue(resp.context["tickets"])
+                self.assertTrue(all(t["cliente"] == "Cliente Demo 01" for t in resp.context["tickets"]))
+
+    def test_pestanas_agrupan_por_categoria(self):
+        resp = self.client.get(CLIENTE + "?pestana=todos")
+        conteos = {p["clave"]: p["count"] for p in resp.context["pestanas"]}
+        self.assertEqual(conteos["abiertos"] + conteos["finalizados"], conteos["todos"])
+        abiertos = self.client.get(CLIENTE).context["tickets"]
+        self.assertTrue(all(t["estado_categoria"] in ("open", None) for t in abiertos))
+        finalizados = self.client.get(CLIENTE + "?pestana=finalizados").context["tickets"]
+        categorias = {t["estado_categoria"] for t in finalizados}
+        self.assertEqual(categorias, {"resolved", "not_applicable"})
+
+    def test_finalizados_muestra_el_estado_real_de_cada_ticket(self):
+        html = self.client.get(CLIENTE + "?pestana=finalizados").content.decode()
+        self.assertIn("status status--resolved", html)
+        self.assertIn("status status--na", html)
+        self.assertIn(">No aplica<", html)
+        self.assertIn(">Resuelto<", html)
+        self.assertNotIn(">Finalizado<", html)
+
+    def test_cliente_no_ve_datos_internos(self):
+        html = self.client.get(CLIENTE + "?pestana=todos").content.decode()
+        lista = html.split('class="request-list"')[1]
+        for interno in ("Agente Demo", "priority", "Soporte", "Despacho", "Sin clasificar"):
+            with self.subTest(interno=interno):
+                self.assertNotIn(interno, lista)
+
+    def test_estado_sin_clasificar_se_muestra_al_cliente_con_su_nombre(self):
+        html = self.client.get(CLIENTE).content.decode()
+        self.assertIn("status--unclassified", html)
+        self.assertIn("en revisión", html)
+
+    def test_enlaces_al_detalle_conservan_el_rol(self):
+        html = self.client.get(CLIENTE).content.decode()
+        self.assertIn('href="/_proto/tickets/9031/?rol=cliente"', html)
+
+    def test_pestana_activa_y_busqueda(self):
+        resp = self.client.get(CLIENTE + "?pestana=finalizados&q=8950")
+        self.assertEqual([t["id"] for t in resp.context["tickets"]], [8950])
+        self.assertContains(resp, 'aria-current="page">Finalizados')
+
+    def test_estados_vacio_busqueda_y_error(self):
+        self.assertContains(self.client.get(CLIENTE + "?vista=vacio"), "Aún no has creado solicitudes")
+        self.assertContains(self.client.get(CLIENTE + "?q=zzz"), "No encontramos solicitudes")
+        self.assertContains(self.client.get(CLIENTE + "?vista=error"), "No pudimos cargar tus tickets")
+
+
+@override_settings(ROOT_URLCONF=URLS_ON, DEBUG=True)
+class ProtoJefeTicketsTests(_SinRender, TestCase):
+    def test_muestra_tickets_de_todas_las_areas_y_sin_area(self):
+        resp = self.client.get(JEFE + "?pagina=1")
+        self.assertGreaterEqual(resp.context["paginacion"]["total"], 50)
+        html = self.client.get(JEFE + "?area=sin-asignar").content.decode()
+        self.assertIn("Sin asignar", html)
+
+    def test_filtro_area_sin_asignar_incluye_finalizados_sin_area(self):
+        ids = [t["id"] for t in self.client.get(JEFE + "?area=sin-asignar").context["tickets"]]
+        self.assertIn(8920, ids)   # finalizado sin área: aparece en «Todos», no en triage
+        self.assertIn(9213, ids)   # sin área + sin clasificar
+
+    def test_filtro_por_categoria_y_estado_concreto(self):
+        sin_clasificar = self.client.get(JEFE + "?estado=cat-sin-clasificar").context["tickets"]
+        self.assertTrue(sin_clasificar and all(t["estado_categoria"] is None for t in sin_clasificar))
+        en_espera = self.client.get(JEFE + "?estado=en-espera").context["tickets"]
+        self.assertTrue(en_espera and all(t["estado"] == "en-espera" for t in en_espera))
+
+    def test_filtro_por_agente_busca_apertura_o_cierre(self):
+        tickets = self.client.get(JEFE + "?agente=demo 11").context["tickets"]
+        self.assertTrue(tickets)
+        self.assertTrue(all("Agente Demo 11" in ((t["abierto_por"] or "") + (t["agente_cierre"] or "")) for t in tickets))
+
+    def test_filtros_invalidos_responden_200_con_mensaje(self):
+        resp = self.client.get(JEFE + "?area=Marte&estado=zz&prioridad=x&tipo=y&desde=99-99-9999&pagina=x&orden=z")
+        self.assertEqual(resp.status_code, 200)
+        for campo in ("area", "estado", "prioridad", "tipo", "desde", "pagina", "orden"):
+            self.assertIn(campo, resp.context["errores"])
+
+    def test_tabla_con_columna_de_area_y_enlaces_con_rol(self):
+        html = self.client.get(JEFE).content.decode()
+        self.assertIn('<th scope="col">Área</th>', html)
+        self.assertIn("?rol=jefe", html)
+
+    def test_resumen_enlaza_a_triage(self):
+        resp = self.client.get(JEFE)
+        self.assertEqual(resp.context["resumen"]["triage"], 5)
+        self.assertContains(resp, 'href="/_proto/jefe/triage/"')
+
+
+@override_settings(ROOT_URLCONF=URLS_ON, DEBUG=True)
+class ProtoJefeTriageTests(_SinRender, TestCase):
+    def test_solo_tickets_sin_area_no_finalizados(self):
+        tickets = self.client.get(TRIAGE).context["tickets"]
+        self.assertTrue(tickets)
+        for t in tickets:
+            with self.subTest(id=t["id"]):
+                self.assertIsNone(t["area"])
+                self.assertNotIn(t["estado_categoria"], ("resolved", "not_applicable"))
+        self.assertNotIn(8920, [t["id"] for t in tickets])
+
+    def test_sin_area_y_sin_clasificar_no_desaparece_de_triage(self):
+        resp = self.client.get(TRIAGE)
+        self.assertIn(9213, [t["id"] for t in resp.context["tickets"]])
+        self.assertContains(resp, "tiene un estado sin clasificar")
+        self.assertContains(resp, "necesita clasificarse")
+
+    def test_ordenado_por_antiguedad(self):
+        dias = [t["dias"] for t in self.client.get(TRIAGE).context["tickets"]]
+        self.assertEqual(dias, sorted(dias, reverse=True))
+
+    def test_asignar_area_lleva_al_formulario_de_edicion_de_v2(self):
+        html = self.client.get(TRIAGE).content.decode()
+        self.assertIn('href="/_proto/tickets/9210/?rol=jefe&amp;accion=editar"', html)
+        detalle = self.client.get("/_proto/tickets/9210/?rol=jefe&accion=editar").content.decode()
+        self.assertIn('id="f-area"', detalle)
+
+    def test_contador_de_navegacion_coincide(self):
+        resp = self.client.get(TRIAGE)
+        item = [i for i in resp.context["nav_items"] if i["clave"] == "triage"][0]
+        self.assertEqual(item["count"], len(resp.context["tickets"]))
+
+    def test_estado_vacio(self):
+        self.assertContains(self.client.get(TRIAGE + "?vista=vacio"), "Todo asignado")
 
 
 # --- Reglas estáticas sobre el código fuente ----------------------------------------

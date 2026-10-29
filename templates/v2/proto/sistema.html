@@ -213,6 +213,24 @@ en cada carga (una sola fuente de verdad). Los ejemplos usan los mismos componen
     <div class="readonly">Cliente Demo 01<span class="readonly__note">Campo de solo lectura</span></div>
   </div>
 
+  <h3>Pestañas (V3)</h3>
+  {% include "v2/components/tabs.html" with pestanas=demo_pestanas tabs_label="Ejemplo de pestañas" %}
+
+  <h3>Tarjeta de solicitud del Cliente (V3)</h3>
+  <ul class="request-list" role="list" aria-label="Ejemplo de solicitudes">
+    {% with ticket=demo_solicitud_abierta rol="cliente" %}{% include "v2/components/request_card.html" %}{% endwith %}
+    {% with ticket=demo_solicitud_finalizada rol="cliente" %}{% include "v2/components/request_card.html" %}{% endwith %}
+  </ul>
+
+  <h3>Celda de área (V3)</h3>
+  <div class="specimen">
+    {% with ticket=demo_ticket %}{% include "v2/components/area_cell.html" %}{% endwith %}
+    {% with ticket=demo_triage %}{% include "v2/components/area_cell.html" %}{% endwith %}
+  </div>
+
+  <h3>Ticket sin triage (V3)</h3>
+  <div class="panel"><ul class="triage-list" role="list" aria-label="Ejemplo de ticket sin triage">{% with ticket=demo_triage %}{% include "v2/components/triage_item.html" %}{% endwith %}</ul></div>
+
   <h3>Tabla de tickets</h3>
   <div class="panel">
     {% with tickets=muestra %}{% include "v2/components/ticket_table.html" %}{% endwith %}

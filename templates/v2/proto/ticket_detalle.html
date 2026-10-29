@@ -10,8 +10,8 @@ escrito nunca viaja en la URL. Solo se envían rol, accion y simular.
 
 {% block breadcrumb %}
 <ol>
-  {% if rol == "jefe" %}<li><a href="{% url 'proto:fuera_de_alcance' %}">Todos los tickets</a></li>
-  {% elif rol == "cliente" %}<li><a href="{% url 'proto:fuera_de_alcance' %}">Mis tickets</a></li>
+  {% if rol == "jefe" %}<li><a href="{% url 'proto:jefe_tickets' %}">Todos los tickets</a></li>
+  {% elif rol == "cliente" %}<li><a href="{% url 'proto:cliente_tickets' %}">Mis tickets</a></li>
   {% else %}<li><a href="{% url 'proto:index' %}">Mi trabajo</a></li><li><a href="{% url 'proto:bandeja' %}">Pendientes en mi área</a></li>{% endif %}
   <li><span aria-current="page" class="tnum">#{{ ticket.id }}</span></li>
 </ol>

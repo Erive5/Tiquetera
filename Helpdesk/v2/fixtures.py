@@ -135,6 +135,14 @@ _OBSERVACIONES = {
     9096: "Este caso se abrió por error: es el mismo problema del ticket 9061.",
     9150: "Solicito revisar por qué no me llegan los correos de confirmación de pedidos desde ayer.",
     9201: "El vendedor no ha enviado la cotización solicitada la semana pasada.",
+    # V3
+    9210: ("Al intentar descargar la boleta de octubre desde el portal aparece «documento no disponible». "
+           "La necesito para rendir gastos esta semana."),
+    9211: "Nos cambiamos de oficina y la dirección de facturación debe quedar en Av. Ejemplo 123, Ñuñoa.",
+    9212: "El pago con tarjeta queda «en proceso» y luego se anula. Lo intenté dos veces hoy.",
+    9213: "Envié la misma solicitud dos veces desde el portal por error. Pueden ignorar esta.",
+    9160: "Llegó el pedido 4512 con un modelo distinto al que compré. Adjunto foto por correo.",
+    9170: "Escribí también por correo; es la misma consulta del ticket 9031.",
 }
 
 _ABIERTO_POR = {
@@ -158,6 +166,44 @@ _EXTRA = [
      None, None, "", None, None),
     (9201, "Cotización pendiente de envío", "Cliente Demo 40", "consulta", "media", "a-resolucion", 3,
      "Ventas", "Agente Demo 07", "", None, None),
+    # --- V3: solicitudes adicionales de Cliente Demo 01 («Mis tickets») ---
+    (9160, "Pedido 4512 llegó con un producto equivocado", "Cliente Demo 01", "reclamo", "media", "en-espera", 2,
+     "Despacho", "Agente Demo 09", "", None, None),
+    (9170, "Consulta duplicada enviada por correo", "Cliente Demo 01", "consulta", "nula", "anulado", 4,
+     "Administración", None, "", None, None),
+    (8950, "Solicitud de descuento retroactivo", "Cliente Demo 01", "consulta", "baja", "no-aplica", 25,
+     "Ventas", "Agente Demo 07",
+     "Las promociones no se aplican a compras anteriores a su vigencia, según las condiciones publicadas.",
+     "Agente Demo 07", 23),
+    (8940, "Cambio de plan de suscripción", "Cliente Demo 01", "consulta", "media", "resuelto", 30,
+     "Ventas", None, "Se aplicó el plan Anual desde el 1 de octubre. Verás el ajuste en tu próxima boleta.",
+     "Agente Demo 07", 28),
+    # --- V3: otras áreas («Todos los tickets» del Jefe de Mesa) ---
+    (9202, "Factura con monto incorrecto en despacho", "Cliente Demo 41", "reclamo", "alta", "a-resolucion", 6,
+     "Despacho", "Agente Demo 09", "", None, None),
+    (9203, "Retraso en entrega a Valparaíso", "Cliente Demo 42", "reclamo", "media", "escalado", 9,
+     "Despacho", "Agente Demo 09", "", None, None),
+    (9204, "Solicitud de orden de compra formal", "Cliente Demo 43", "consulta", "baja", "a-resolucion", 2,
+     "Administración", "Agente Demo 11", "", None, None),
+    (9205, "Error en conteo de inventario de bodega 3", "Cliente Demo 44", "reclamo", "alta", "a-resolucion", 11,
+     "Picking", "Agente Demo 12", "", None, None),
+    (9206, "Etiquetas de picking impresas en blanco", "Cliente Demo 45", "reclamo", "media", "en-espera", 4,
+     "Picking", "Agente Demo 12", "", None, None),
+    (8930, "Duplicado de nota de venta", "Cliente Demo 46", "consulta", "baja", "resuelto", 12,
+     "Administración", "Agente Demo 11", "Se emitió el duplicado y se envió al correo registrado.", "Agente Demo 11", 11),
+    # --- V3: sin área (triage) ---
+    (9210, "No puedo descargar mi boleta de octubre", "Cliente Demo 47", "reclamo", "alta", "a-resolucion", 3,
+     None, None, "", None, None),
+    (9211, "Cambio de dirección de facturación", "Cliente Demo 48", "consulta", "baja", "a-resolucion", 6,
+     None, None, "", None, None),
+    (9212, "El pago en línea se anula solo", "Cliente Demo 49", "reclamo", "media", "a-resolucion", 0,
+     None, None, "", None, None),
+    # Sin área Y con estado sin clasificar: NO debe desaparecer de «Sin triage» (ajuste 2 de Erika).
+    (9213, "Solicitud repetida desde el portal", "Cliente Demo 50", "consulta", "media", "anulado", 8,
+     None, None, "", None, None),
+    # Sin área pero ya finalizado: no es triage; aparece en «Todos los tickets» con «Sin asignar».
+    (8920, "Consulta respondida por teléfono", "Cliente Demo 51", "consulta", "baja", "resuelto", 14,
+     None, None, "Se respondió por teléfono el mismo día y el cliente confirmó que quedó resuelto.", "Jefa Demo 01", 14),
 ]
 
 

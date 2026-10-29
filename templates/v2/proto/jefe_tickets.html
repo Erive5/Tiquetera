@@ -1,0 +1,183 @@
+{% extends "v2/proto/_layout.html" %}
+{% load tiquetera_v2 %}
+{% comment %}
+Pantalla V3: «Todos los tickets» (rol Jefe de Mesa, simulado). Reutiliza resumen, filtros, chips,
+tabla/tarjetas y paginación de V1, con columna de área (incluye «Sin asignar»). Filtros GET en la URL.
+{% endcomment %}
+
+{% block breadcrumb %}<ol><li><span aria-current="page">Todos los tickets</span></li></ol>{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div class="page-header__text">
+    <p class="overline">Jefe de Mesa · Mesa de ayuda</p>
+    <h1>Todos los tickets</h1>
+    <p class="page-header__subtitle">{% if f.vista == "error" %}No pudimos cargar los tickets en este momento.{% else %}<strong>{{ resumen.total }}</strong> tickets en total · <strong>{{ resumen.abiertos }}</strong> abiertos{% endif %}</p>
+  </div>
+  <a class="btn btn--primary" href="{% url 'proto:jefe_triage' %}">{% icon "circle-alert" %}Revisar sin triage{% if resumen.triage %} ({{ resumen.triage }}){% endif %}</a>
+</header>
+
+{% for tipo, titulo, texto in avisos %}
+<div class="alert alert--{{ tipo }}" role="alert">{% icon "triangle-alert" %}<div class="alert__body"><p class="alert__title">{{ titulo }}</p><p>{{ texto }}</p></div></div>
+{% endfor %}
+
+{% if f.vista == "error" %}
+<section class="panel" aria-labelledby="error-titulo">
+  <div class="empty" role="alert">
+    <div class="empty__art empty__art--error">{% icon "triangle-alert" %}</div>
+    <h2 class="empty__title" id="error-titulo">No pudimos cargar los tickets</h2>
+    <p class="empty__text">El problema es del servidor, no de tu conexión. Tus filtros se conservan: vuelve a intentarlo en unos segundos.</p>
+    <div class="empty__actions"><a class="btn btn--secondary" href="{{ reintentar_url }}">{% icon "refresh-cw" %}Reintentar</a></div>
+    <p class="empty__ref">Referencia del error: PROTO-500 (simulado)</p>
+  </div>
+</section>
+{% else %}
+
+<section aria-labelledby="resumen-titulo">
+  <h2 class="sr-only" id="resumen-titulo">Resumen de la mesa de ayuda</h2>
+  <ul class="stats stats--4" role="list">
+    <li>
+      <a class="stat" href="{{ resumen.url_abiertos }}"{% if resumen.actual_abiertos %} aria-current="true"{% endif %}>
+        <span class="stat__label">Abiertos</span>
+        <span class="stat__value">{{ resumen.abiertos }}</span>
+        <span class="stat__icon">{% icon "inbox" %}</span>
+        <span class="stat__meta">En todas las áreas</span>
+        <span class="stat__cta">Ver abiertos{% icon "chevron-right" %}</span>
+      </a>
+    </li>
+    <li>
+      <a class="stat" href="{% url 'proto:jefe_triage' %}">
+        <span class="stat__label">Sin triage</span>
+        <span class="stat__value">{{ resumen.triage }}</span>
+        <span class="stat__icon stat__icon--aging">{% icon "circle-alert" %}</span>
+        <span class="stat__meta">Esperan que asignes un área</span>
+        <span class="stat__cta">Asignar áreas{% icon "chevron-right" %}</span>
+      </a>
+    </li>
+    <li>
+      <a class="stat" href="{{ resumen.url_altas }}"{% if resumen.actual_altas %} aria-current="true"{% endif %}>
+        <span class="stat__label">Prioridad alta</span>
+        <span class="stat__value">{{ resumen.altas }}</span>
+        <span class="stat__icon stat__icon--alta">{% icon "arrow-up" %}</span>
+        <span class="stat__meta">Abiertos con prioridad alta</span>
+        <span class="stat__cta">Filtrar{% icon "chevron-right" %}</span>
+      </a>
+    </li>
+    <li>
+      <a class="stat" href="{{ resumen.url_sin_clasificar }}"{% if resumen.actual_sin_clasificar %} aria-current="true"{% endif %}>
+        <span class="stat__label">Sin clasificar</span>
+        <span class="stat__value">{{ resumen.sin_clasificar }}</span>
+        <span class="stat__icon">{% icon "circle-help" %}</span>
+        <span class="stat__meta">Con un estado sin categoría</span>
+        <span class="stat__cta">Revisar{% icon "chevron-right" %}</span>
+      </a>
+    </li>
+  </ul>
+</section>
+
+{% if errores %}
+<div class="alert alert--warning" role="alert">
+  {% icon "triangle-alert" %}
+  <div class="alert__body">
+    <p class="alert__title">Algunos filtros no eran válidos y se ignoraron</p>
+    <ul>{% for campo, mensaje in errores.items %}<li>{{ mensaje }}</li>{% endfor %}</ul>
+  </div>
+</div>
+{% endif %}
+
+<section class="panel filters" aria-labelledby="filtros-titulo">
+  <h2 class="sr-only" id="filtros-titulo">Filtros</h2>
+  <button type="button" class="btn btn--secondary filters__toggle" data-filters-toggle aria-controls="filters-panel" aria-expanded="true">
+    {% icon "sliders-horizontal" %}Filtros{% if filtros_activos_count %}<span class="filters__toggle-count">{{ filtros_activos_count }}<span class="sr-only"> activos</span></span>{% endif %}
+  </button>
+  <form method="get" action="" class="filters__panel" id="filters-panel" role="search" aria-label="Filtrar todos los tickets">
+    <div class="filters__grid filters__grid--wide">
+      <div class="field field--search">
+        <label class="field__label" for="f-q">Buscar</label>
+        <div class="control-search">
+          {% icon "search" %}
+          <input class="control" type="search" id="f-q" name="q" value="{{ f.q }}" maxlength="100" placeholder="Asunto, cliente o #ID" autocomplete="off"{% if errores.q %} aria-invalid="true" aria-describedby="f-q-error"{% endif %}>
+        </div>
+        {% if errores.q %}<p class="field__error" id="f-q-error">{{ errores.q }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-estado">Estado</label>
+        <select class="control" id="f-estado" name="estado"{% if errores.estado %} aria-invalid="true" aria-describedby="f-estado-error"{% endif %}>
+          <option value="">Todos</option>
+          <optgroup label="Por categoría">{% for c in categorias %}<option value="{{ c.valor }}"{% if f.estado == c.valor %} selected{% endif %}>{{ c.nombre }}</option>{% endfor %}</optgroup>
+          <optgroup label="Estado concreto">{% for e in estados %}<option value="{{ e.valor }}"{% if f.estado == e.valor %} selected{% endif %}>{{ e.nombre }}</option>{% endfor %}</optgroup>
+        </select>
+        {% if errores.estado %}<p class="field__error" id="f-estado-error">{{ errores.estado }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-area">Área</label>
+        <select class="control" id="f-area" name="area"{% if errores.area %} aria-invalid="true" aria-describedby="f-area-error"{% endif %}>
+          <option value="">Todas</option>
+          <option value="sin-asignar"{% if f.area == "sin-asignar" %} selected{% endif %}>Sin asignar</option>
+          {% for a in areas %}<option value="{{ a }}"{% if f.area == a %} selected{% endif %}>{{ a }}</option>{% endfor %}
+        </select>
+        {% if errores.area %}<p class="field__error" id="f-area-error">{{ errores.area }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-prioridad">Prioridad</label>
+        <select class="control" id="f-prioridad" name="prioridad"{% if errores.prioridad %} aria-invalid="true" aria-describedby="f-prioridad-error"{% endif %}>
+          <option value="">Todas</option>
+          {% for p in prioridades %}<option value="{{ p.valor }}"{% if f.prioridad == p.valor %} selected{% endif %}>{{ p.nombre }}</option>{% endfor %}
+        </select>
+        {% if errores.prioridad %}<p class="field__error" id="f-prioridad-error">{{ errores.prioridad }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-tipo">Tipo</label>
+        <select class="control" id="f-tipo" name="tipo"{% if errores.tipo %} aria-invalid="true" aria-describedby="f-tipo-error"{% endif %}>
+          <option value="">Todos</option>
+          {% for t in tipos %}<option value="{{ t.valor }}"{% if f.tipo == t.valor %} selected{% endif %}>{{ t.nombre }}</option>{% endfor %}
+        </select>
+        {% if errores.tipo %}<p class="field__error" id="f-tipo-error">{{ errores.tipo }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-agente">Agente</label>
+        <input class="control" type="text" id="f-agente" name="agente" value="{{ f.agente }}" maxlength="100" placeholder="Apertura o cierre" autocomplete="off"{% if errores.agente %} aria-invalid="true" aria-describedby="f-agente-error"{% endif %}>
+        {% if errores.agente %}<p class="field__error" id="f-agente-error">{{ errores.agente }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label class="field__label" for="f-desde">Abiertos desde</label>
+        <input class="control tnum" type="date" id="f-desde" name="desde" value="{{ f.desde }}" max="{{ hoy|date:'Y-m-d' }}"{% if errores.desde %} aria-invalid="true" aria-describedby="f-desde-error"{% endif %}>
+        {% if errores.desde %}<p class="field__error" id="f-desde-error">{{ errores.desde }}</p>{% endif %}
+      </div>
+      {% if f.orden %}<input type="hidden" name="orden" value="{{ f.orden }}">{% endif %}
+      <div class="filters__actions">
+        <button type="submit" class="btn btn--secondary">{% icon "filter" %}Aplicar filtros</button>
+      </div>
+    </div>
+  </form>
+  <div class="filters__summary">
+    <p class="results-count" role="status">
+      {% if paginacion.total %}Mostrando <strong>{{ paginacion.desde }}–{{ paginacion.hasta }}</strong> de <strong>{{ paginacion.total }}</strong> {% if hay_filtros %}resultados{% else %}tickets{% endif %}
+      {% else %}Sin resultados con estos filtros{% endif %}
+    </p>
+    {% if chips %}
+    <ul class="chips" role="list" aria-label="Filtros activos">
+      {% for c in chips %}<li><a class="chip" href="{{ c.quitar_url }}">{{ c.etiqueta }}: <b>{{ c.valor }}</b>{% icon "x" %}<span class="sr-only"> (quitar filtro)</span></a></li>{% endfor %}
+      <li><a class="chips__clear" href="{{ limpiar_url }}">Limpiar filtros</a></li>
+    </ul>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel" aria-labelledby="lista-titulo">
+  <h2 class="sr-only" id="lista-titulo">Tickets</h2>
+  {% if tickets %}
+    {% include "v2/components/ticket_table.html" %}
+    {% include "v2/components/ticket_cards.html" %}
+    {% include "v2/components/pagination.html" %}
+  {% else %}
+  <div class="empty">
+    <div class="empty__art">{% icon "search" %}</div>
+    <h3 class="empty__title">Ningún ticket coincide con estos filtros</h3>
+    <p class="empty__text">Prueba con otra búsqueda o quita alguno de los filtros activos.</p>
+    <div class="empty__actions"><a class="btn btn--secondary" href="{{ limpiar_url }}">{% icon "x" %}Limpiar filtros</a></div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

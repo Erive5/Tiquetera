@@ -1,7 +1,7 @@
 {% load tiquetera_v2 %}
 {% comment %}
 Componente: barra lateral. En V1/V2 la persona y los ítems dependen del rol simulado.
-Entradas: inicio_url_name, perfil_url_name, agente {nombre, iniciales, area, rol}, nav_items [{texto, icono, url_name, activo}], nav_count (opcional).
+Entradas: inicio_url_name, perfil_url_name, agente {nombre, iniciales, area, rol}, nav_items [{texto, icono, url_name, activo, count (opcional)}], nav_count (opcional, ítem «pendientes»).
 En escritorio es fija; en tablet/móvil se vuelve cajón (con JS) o lista en flujo (sin JS).
 Cerrar sesión será un POST en la versión integrada; en el prototipo está deshabilitado.
 {% endcomment %}
@@ -16,7 +16,7 @@ Cerrar sesión será un POST en la versión integrada; en el prototipo está des
     {% for item in nav_items %}
     <a class="nav-link" href="{% url item.url_name %}"{% if item.activo %} aria-current="page"{% endif %}>
       {% icon item.icono %}<span>{{ item.texto }}</span>
-      {% if item.clave == "pendientes" and nav_count %}<span class="nav-link__count">{{ nav_count }}<span class="sr-only"> tickets</span></span>{% endif %}
+      {% if item.clave == "pendientes" and nav_count %}<span class="nav-link__count">{{ nav_count }}<span class="sr-only"> tickets</span></span>{% elif item.count %}<span class="nav-link__count">{{ item.count }}<span class="sr-only"> tickets</span></span>{% endif %}
     </a>
     {% endfor %}
   </nav>

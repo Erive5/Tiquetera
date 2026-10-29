@@ -5,9 +5,9 @@
 {% block content %}
 <header class="page-header">
   <div class="page-header__text">
-    <p class="overline">Tiquetera v2 · Incrementos V1 y V2</p>
+    <p class="overline">Tiquetera v2 · Incrementos V1, V2 y V3</p>
     <h1>Índice del prototipo</h1>
-    <p class="page-header__subtitle">Bandeja «Pendientes en mi área», detalle de ticket con roles simulados y sistema de diseño. Todos los datos son ficticios y nada se guarda.</p>
+    <p class="page-header__subtitle">Bandejas por rol, detalle de ticket con roles simulados y sistema de diseño. Todos los datos son ficticios y nada se guarda.</p>
   </div>
 </header>
 
@@ -41,6 +41,21 @@
     <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9201 %}"><span class="doc-card__title">{% icon "lock" %}Fuera de alcance (403)</span><span class="doc-card__text">Ticket de otra área visto como Agente.</span></a></li>
     <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 99999 %}"><span class="doc-card__title">{% icon "search" %}No encontrado (404)</span><span class="doc-card__text">Número de ticket inexistente.</span></a></li>
     <li><a class="doc-card" href="{% url 'proto:ticket_detalle' 9031 %}?vista=error"><span class="doc-card__title">{% icon "triangle-alert" %}Error al cargar</span><span class="doc-card__text">Fallo simulado con opción de reintentar.</span></a></li>
+  </ul>
+</section>
+
+<section class="doc-grid" aria-labelledby="bandejas-titulo">
+  <h2 id="bandejas-titulo" class="doc-grid__title">Bandejas de Cliente y Jefe de Mesa (V3)</h2>
+  <ul class="doc-cards" role="list">
+    <li><a class="doc-card" href="{% url 'proto:cliente_tickets' %}"><span class="doc-card__title">{% icon "user" %}Mis tickets · Abiertos</span><span class="doc-card__text">Cliente: estado de cada solicitud en lenguaje simple.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:cliente_tickets' %}?pestana=finalizados"><span class="doc-card__title">{% icon "circle-check" %}Mis tickets · Finalizados</span><span class="doc-card__text">Resueltos y «No aplica», cada uno con su estado real.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:cliente_tickets' %}?q=zzz"><span class="doc-card__title">{% icon "search" %}Mis tickets · Sin resultados</span><span class="doc-card__text">Búsqueda sin coincidencias.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:cliente_tickets' %}?vista=vacio"><span class="doc-card__title">{% icon "inbox" %}Mis tickets · Sin solicitudes</span><span class="doc-card__text">Cliente que aún no ha creado tickets.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:jefe_tickets' %}"><span class="doc-card__title">{% icon "inbox" %}Todos los tickets</span><span class="doc-card__text">Jefe de Mesa: resumen, filtros con área y tabla completa.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:jefe_tickets' %}?area=sin-asignar"><span class="doc-card__title">{% icon "triangle-alert" %}Todos · Área sin asignar</span><span class="doc-card__text">Incluye un ticket sin área ya finalizado (no es triage).</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:jefe_triage' %}"><span class="doc-card__title">{% icon "circle-alert" %}Sin triage</span><span class="doc-card__text">Tickets sin área, incluido uno con estado sin clasificar.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:jefe_triage' %}?vista=vacio"><span class="doc-card__title">{% icon "circle-check" %}Sin triage · Todo asignado</span><span class="doc-card__text">Estado vacío.</span></a></li>
+    <li><a class="doc-card" href="{% url 'proto:jefe_tickets' %}?rol=cliente"><span class="doc-card__title">{% icon "lock" %}Todos los tickets como Cliente (403)</span><span class="doc-card__text">Acceso simulado por rol.</span></a></li>
   </ul>
 </section>
 

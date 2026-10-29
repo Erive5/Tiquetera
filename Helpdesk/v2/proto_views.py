@@ -44,18 +44,33 @@ def proto_only(view):
 
 # --- Navegación común -----------------------------------------------------------
 
+INICIO_POR_ROL = {"agente": "proto:bandeja", "jefe": "proto:jefe_tickets", "cliente": "proto:cliente_tickets"}
+
+
+def tickets_sin_triage(hoy=None):
+    """Regla de prototipo para «Sin triage» (decisión pendiente para la integración, ver v3-entrega):
+    tickets SIN área asignada que NO están finalizados. «No finalizado» incluye la categoría
+    abierta y también los estados SIN CLASIFICAR (categoría None), para que un ticket sin área
+    con un estado pendiente de clasificación no desaparezca de la atención del Jefe de Mesa.
+    Los más antiguos primero."""
+    tickets = [t for t in fixtures.todos_los_tickets(hoy)
+               if not t["area"] and t["estado_categoria"] not in ("resolved", "not_applicable")]
+    return sorted(tickets, key=lambda t: (-t["dias"], t["id"]))
+
+
 def _nav(activo, rol="agente"):
     fuera = "proto:fuera_de_alcance"
     if rol == "jefe":
         items = [
-            {"clave": "tickets", "texto": "Todos los tickets", "icono": "inbox", "url_name": fuera},
-            {"clave": "triage", "texto": "Sin triage", "icono": "circle-alert", "url_name": fuera},
+            {"clave": "tickets", "texto": "Todos los tickets", "icono": "inbox", "url_name": "proto:jefe_tickets"},
+            {"clave": "triage", "texto": "Sin triage", "icono": "circle-alert", "url_name": "proto:jefe_triage",
+             "count": len(tickets_sin_triage())},
             {"clave": "agentes", "texto": "Agentes", "icono": "users", "url_name": fuera},
             {"clave": "catalogos", "texto": "Catálogos", "icono": "layout-grid", "url_name": fuera},
         ]
     elif rol == "cliente":
         items = [
-            {"clave": "mis", "texto": "Mis tickets", "icono": "inbox", "url_name": fuera},
+            {"clave": "mis", "texto": "Mis tickets", "icono": "inbox", "url_name": "proto:cliente_tickets"},
             {"clave": "crear", "texto": "Crear ticket", "icono": "plus", "url_name": fuera},
         ]
     else:
@@ -75,7 +90,7 @@ def _base_context(activo, titulo, rol="agente"):
         "agente": fixtures.PERSONAS[rol] if rol != "agente" else fixtures.AGENTE,
         "nav_items": _nav(activo, rol),
         "page_title": titulo,
-        "inicio_url_name": "proto:bandeja" if rol == "agente" else "proto:index",
+        "inicio_url_name": INICIO_POR_ROL[rol],
         "perfil_url_name": "proto:fuera_de_alcance",
         "nav_count": len(fixtures.tickets_pendientes()) if rol == "agente" else None,
     }
@@ -361,6 +376,13 @@ _PARES_CONTRASTE = [
 ]
 
 
+def _demo_solicitud(ticket_id):
+    t = fixtures.ticket_por_id(ticket_id)
+    t["finalizado"] = t["estado_categoria"] in ("resolved", "not_applicable")
+    t["frase"] = _frase_cliente(t)
+    return t
+
+
 @proto_only
 def sistema(request):
     crudos, resueltos = _leer_tokens()
@@ -420,6 +442,13 @@ def sistema(request):
         "demo_acciones_sin_clasificar": acciones_permitidas("agente", fixtures.ticket_por_id(9096)),
         "demo_ticket": {**fixtures.ticket_por_id(8990), "antiguo": False},
         "demo_errores": [{"campo": "demo-textarea", "mensaje": "Escribe la solución antes de resolver el ticket."}],
+        # V3
+        "demo_pestanas": [{"nombre": "Abiertos", "count": 5, "url": "#", "actual": True},
+                          {"nombre": "Finalizados", "count": 4, "url": "#", "actual": False},
+                          {"nombre": "Todos", "count": 9, "url": "#", "actual": False}],
+        "demo_solicitud_abierta": _demo_solicitud(9160),
+        "demo_solicitud_finalizada": _demo_solicitud(8950),
+        "demo_triage": {**fixtures.ticket_por_id(9213), "antiguo": True},
     })
     return render(request, "v2/proto/sistema.html", ctx)
 
@@ -610,3 +639,355 @@ def ticket_detalle(request, ticket_id):
 def _roles_urls(path):
     nombres = {"agente": "Agente", "jefe": "Jefe de Mesa", "cliente": "Cliente"}
     return [{"clave": r, "nombre": nombres[r], "url": f"{path}?{urlencode({'rol': r})}"} for r in ROLES]
+
+
+# =============================================================================
+# V3 — Bandejas de Cliente («Mis tickets») y Jefe de Mesa («Todos», «Sin triage»)
+# =============================================================================
+
+FINALIZADAS = ("resolved", "not_applicable")
+PESTANAS_CLIENTE = {
+    "abiertos": "Abiertos",
+    "finalizados": "Finalizados",
+    "todos": "Todos",
+}
+
+
+def _rol_de_pagina(request, esperado):
+    """Rol simulado de una bandeja: por defecto el rol dueño de la pantalla. Un valor inválido avisa
+    y usa el rol esperado; cualquier otro rol válido verá 403 (simulación, no RBAC real)."""
+    rol = request.GET.get("rol", esperado)
+    aviso = None
+    if rol not in ROLES:
+        aviso = ("warning", "Rol de simulación no válido", f"Se muestra la vista de {fixtures.PERSONAS[esperado]['rol']}.")
+        rol = esperado
+    return rol, aviso
+
+
+def _denegar(request, rol):
+    ctx = _base_context(NAV_DETALLE[rol], "No tienes acceso a esta sección", rol)
+    ctx.update({"rol": rol, "roles_url": _roles_urls(request.path)})
+    return render(request, "v2/proto/acceso_denegado.html", ctx, status=403)
+
+
+def _frase_cliente(t):
+    """Línea en lenguaje simple según la CATEGORÍA (no según el nombre del estado)."""
+    cat = t["estado_categoria"]
+    if cat == "open":
+        return "Estamos trabajando en tu solicitud."
+    if cat is None:
+        return "Tu solicitud está en revisión por el equipo."
+    if cat == "resolved":
+        return f"Resuelta el {t['cierre'].strftime('%d/%m/%Y')}." if t["cierre"] else "Resuelta."
+    return (f"Cerrada el {t['cierre'].strftime('%d/%m/%Y')}: no corresponde a una incidencia que podamos resolver."
+            if t["cierre"] else "Cerrada: no corresponde a una incidencia que podamos resolver.")
+
+
+@proto_only
+def cliente_tickets(request):
+    hoy = date.today()
+    rol, aviso = _rol_de_pagina(request, "cliente")
+    if rol != "cliente":
+        return _denegar(request, rol)
+
+    vista = request.GET.get("vista", "")
+    pestana = request.GET.get("pestana", "abiertos")
+    avisos = [aviso] if aviso else []
+    if pestana not in PESTANAS_CLIENTE:
+        avisos.append(("warning", "Esa pestaña no existe", "Se muestran tus solicitudes abiertas."))
+        pestana = "abiertos"
+    q = request.GET.get("q", "").strip()
+    if len(q) > MAX_BUSQUEDA:
+        avisos.append(("warning", "Búsqueda demasiado larga", f"Admite hasta {MAX_BUSQUEDA} caracteres. Se ignoró."))
+        q = ""
+
+    persona = fixtures.PERSONAS["cliente"]
+    propios = [] if vista == "vacio" else [t for t in fixtures.todos_los_tickets(hoy) if t["cliente"] == persona["nombre"]]
+    for t in propios:
+        t["finalizado"] = t["estado_categoria"] in FINALIZADAS
+        t["frase"] = _frase_cliente(t)
+    grupos = {
+        "abiertos": [t for t in propios if not t["finalizado"]],
+        "finalizados": [t for t in propios if t["finalizado"]],
+        "todos": list(propios),
+    }
+    lista = grupos[pestana]
+    if q:
+        texto = q.lower().lstrip("#")
+        lista = [t for t in lista if texto in t["asunto"].lower() or texto == str(t["id"])]
+    # Más recientes primero: abiertos por apertura, finalizados por cierre.
+    lista = sorted(lista, key=lambda t: ((t["cierre"] or t["apertura"]) if t["finalizado"] else t["apertura"], t["id"]),
+                   reverse=True)
+
+    path = request.path
+    pestanas = []
+    for clave, nombre in PESTANAS_CLIENTE.items():
+        params = {"pestana": clave}
+        if q:
+            params["q"] = q
+        pestanas.append({"clave": clave, "nombre": nombre, "count": len(grupos[clave]),
+                         "url": f"{path}?{urlencode(params)}", "actual": clave == pestana})
+
+    titulo = "No pudimos cargar tus tickets" if vista == "error" else f"Mis tickets · {PESTANAS_CLIENTE[pestana]}"
+    ctx = _base_context("mis", titulo, "cliente")
+    ctx.update({
+        "rol": "cliente",
+        "roles_url": _roles_urls(path),
+        "avisos": avisos,
+        "vista": vista if vista in ("error", "vacio") else "",
+        "pestana": pestana,
+        "pestana_nombre": PESTANAS_CLIENTE[pestana],
+        "pestanas": pestanas,
+        "q": q,
+        "tickets": lista,
+        "total_propios": len(propios),
+        "limpiar_url": f"{path}?{urlencode({'pestana': pestana})}",
+        "reintentar_url": f"{path}?{urlencode({'pestana': pestana})}",
+    })
+    return render(request, "v2/proto/cliente_tickets.html", ctx)
+
+
+# --- Jefe de Mesa: «Todos los tickets» ----------------------------------------------
+
+FILTROS_JEFE = ("q", "estado", "prioridad", "tipo", "area", "agente", "desde", "orden")
+CATEGORIAS_FILTRO = {
+    "cat-abiertos": ("Abiertos", lambda t: t["estado_categoria"] == "open"),
+    "cat-sin-clasificar": ("Sin clasificar", lambda t: t["estado_categoria"] is None),
+    "cat-resueltos": ("Resueltos", lambda t: t["estado_categoria"] == "resolved"),
+    "cat-no-aplica": ("No aplica", lambda t: t["estado_categoria"] == "not_applicable"),
+}
+
+
+def _validar_filtros_jefe(get, hoy):
+    valores, errores = {}, {}
+    q = get.get("q", "").strip()
+    if len(q) > MAX_BUSQUEDA:
+        errores["q"] = f"La búsqueda admite hasta {MAX_BUSQUEDA} caracteres. Se ignoró."
+        q = ""
+    valores["q"] = q
+
+    estado = get.get("estado", "")
+    if estado and estado not in CATEGORIAS_FILTRO and estado not in fixtures.ESTADOS:
+        errores["estado"] = "Ese estado no existe. Se muestran todos."
+        estado = ""
+    valores["estado"] = estado
+
+    for campo, validos, msg in (("prioridad", fixtures.PRIORIDADES, "Esa prioridad no existe. Se muestran todas."),
+                                ("tipo", fixtures.TIPOS, "Ese tipo no existe. Se muestran todos.")):
+        v = get.get(campo, "")
+        if v and v not in validos:
+            errores[campo] = msg
+            v = ""
+        valores[campo] = v
+
+    area = get.get("area", "")
+    if area and area != "sin-asignar" and area not in fixtures.AREAS:
+        errores["area"] = "Esa área no existe. Se muestran todas."
+        area = ""
+    valores["area"] = area
+
+    agente = get.get("agente", "").strip()
+    if len(agente) > MAX_BUSQUEDA:
+        errores["agente"] = f"El nombre admite hasta {MAX_BUSQUEDA} caracteres. Se ignoró."
+        agente = ""
+    valores["agente"] = agente
+
+    desde_txt, desde = get.get("desde", ""), None
+    if desde_txt:
+        try:
+            desde = date.fromisoformat(desde_txt)
+            if desde > hoy:
+                errores["desde"] = "La fecha no puede ser futura. Se ignoró."
+                desde, desde_txt = None, ""
+        except ValueError:
+            errores["desde"] = "Usa una fecha válida (dd-mm-aaaa). Se ignoró."
+            desde_txt = ""
+    valores["desde"], valores["desde_fecha"] = desde_txt, desde
+
+    orden = get.get("orden", "")
+    if orden and orden not in ("prioridad", "antiguedad"):
+        errores["orden"] = "Ese orden no existe. Se ordenó por prioridad."
+        orden = ""
+    valores["orden"] = orden
+
+    try:
+        pagina = int(get.get("pagina", "1"))
+        if pagina < 1:
+            raise ValueError
+    except ValueError:
+        errores["pagina"] = "Esa página no existe. Se muestra la primera."
+        pagina = 1
+    valores["pagina"] = pagina
+    vista = get.get("vista", "")
+    valores["vista"] = vista if vista == "error" else ""
+    return valores, errores
+
+
+def _filtrar_jefe(tickets, f):
+    r = tickets
+    if f["q"]:
+        texto = f["q"].lower().lstrip("#")
+        r = [t for t in r if texto in t["asunto"].lower() or texto in t["cliente"].lower() or texto == str(t["id"])]
+    if f["estado"] in CATEGORIAS_FILTRO:
+        cond = CATEGORIAS_FILTRO[f["estado"]][1]
+        r = [t for t in r if cond(t)]
+    elif f["estado"]:
+        r = [t for t in r if t["estado"] == f["estado"]]
+    if f["prioridad"]:
+        r = [t for t in r if t["prioridad"] == f["prioridad"]]
+    if f["tipo"]:
+        r = [t for t in r if t["tipo"] == f["tipo"]]
+    if f["area"] == "sin-asignar":
+        r = [t for t in r if not t["area"]]
+    elif f["area"]:
+        r = [t for t in r if t["area"] == f["area"]]
+    if f["agente"]:
+        texto = f["agente"].lower()
+        r = [t for t in r if texto in (t["abierto_por"] or "").lower() or texto in (t["agente_cierre"] or "").lower()]
+    if f["desde_fecha"]:
+        r = [t for t in r if t["apertura"] >= f["desde_fecha"]]
+    if f["orden"] == "antiguedad":
+        return sorted(r, key=lambda t: (-t["dias"], t["prioridad_orden"], t["id"]))
+    # Por prioridad: primero los no finalizados, luego por prioridad y antigüedad.
+    return sorted(r, key=lambda t: (t["estado_categoria"] in FINALIZADAS, t["prioridad_orden"], -t["dias"], t["id"]))
+
+
+def _qs_jefe(valores, **cambios):
+    params = {k: valores[k] for k in FILTROS_JEFE if valores.get(k)}
+    for k, v in cambios.items():
+        if v is None:
+            params.pop(k, None)
+        else:
+            params[k] = v
+    return ("?" + urlencode(params)) if params else "?"
+
+
+def _chips_jefe(valores, path):
+    etiquetas = []
+    if valores["q"]:
+        etiquetas.append(("q", "Búsqueda", f"«{valores['q']}»"))
+    if valores["estado"]:
+        nombre = (CATEGORIAS_FILTRO[valores["estado"]][0] if valores["estado"] in CATEGORIAS_FILTRO
+                  else fixtures.ESTADOS[valores["estado"]]["nombre"])
+        etiquetas.append(("estado", "Estado", nombre))
+    if valores["prioridad"]:
+        etiquetas.append(("prioridad", "Prioridad", fixtures.PRIORIDADES[valores["prioridad"]]["nombre"]))
+    if valores["tipo"]:
+        etiquetas.append(("tipo", "Tipo", fixtures.TIPOS[valores["tipo"]]))
+    if valores["area"]:
+        etiquetas.append(("area", "Área", "Sin asignar" if valores["area"] == "sin-asignar" else valores["area"]))
+    if valores["agente"]:
+        etiquetas.append(("agente", "Agente", f"«{valores['agente']}»"))
+    if valores["desde"]:
+        etiquetas.append(("desde", "Desde", valores["desde_fecha"].strftime("%d/%m/%Y")))
+    if valores["orden"] == "antiguedad":
+        etiquetas.append(("orden", "Orden", "Más antiguos primero"))
+    return [{"etiqueta": e, "valor": v, "quitar_url": path + _qs_jefe(valores, **{k: None})} for k, e, v in etiquetas]
+
+
+@proto_only
+def jefe_tickets(request):
+    hoy = date.today()
+    rol, aviso = _rol_de_pagina(request, "jefe")
+    if rol != "jefe":
+        return _denegar(request, rol)
+    valores, errores = _validar_filtros_jefe(request.GET, hoy)
+    path = request.path
+
+    base = fixtures.todos_los_tickets(hoy)
+    for t in base:
+        t["antiguo"] = t["estado_categoria"] not in FINALIZADAS and t["dias"] >= UMBRAL_ANTIGUEDAD_DIAS
+    filtrados = _filtrar_jefe(base, valores)
+    total = len(filtrados)
+    paginas = max(1, math.ceil(total / POR_PAGINA))
+    pagina = min(valores["pagina"], paginas)
+    inicio = (pagina - 1) * POR_PAGINA
+    visibles = filtrados[inicio:inicio + POR_PAGINA]
+    hay_filtros = any(valores[k] for k in FILTROS_JEFE)
+    vacio_filtros = {k: "" for k in FILTROS_JEFE}
+
+    abiertos = [t for t in base if t["estado_categoria"] == "open"]
+    sin_clasificar = [t for t in base if t["estado_categoria"] is None]
+    solo = lambda **kw: all(valores[k] == kw.get(k, "") for k in FILTROS_JEFE)  # noqa: E731
+    resumen = {
+        "abiertos": len(abiertos),
+        "triage": len(tickets_sin_triage(hoy)),
+        "altas": len([t for t in abiertos if t["prioridad"] == "alta"]),
+        "sin_clasificar": len(sin_clasificar),
+        "total": len(base),
+        "url_abiertos": path + _qs_jefe(vacio_filtros, estado="cat-abiertos"),
+        "url_altas": path + _qs_jefe(vacio_filtros, estado="cat-abiertos", prioridad="alta"),
+        "url_sin_clasificar": path + _qs_jefe(vacio_filtros, estado="cat-sin-clasificar"),
+        "actual_abiertos": solo(estado="cat-abiertos"),
+        "actual_altas": solo(estado="cat-abiertos", prioridad="alta"),
+        "actual_sin_clasificar": solo(estado="cat-sin-clasificar"),
+    }
+    paginacion = {
+        "pagina": pagina, "paginas": paginas, "total": total,
+        "desde": inicio + 1 if total else 0, "hasta": inicio + len(visibles),
+        "anterior_url": path + _qs_jefe(valores, pagina=str(pagina - 1)) if pagina > 1 else None,
+        "siguiente_url": path + _qs_jefe(valores, pagina=str(pagina + 1)) if pagina < paginas else None,
+        "enlaces": [{"numero": n, "url": path + _qs_jefe(valores, pagina=str(n)), "actual": n == pagina}
+                    for n in range(1, paginas + 1)],
+    }
+    if valores["vista"] == "error":
+        titulo = "No pudimos cargar los tickets"
+    elif hay_filtros:
+        titulo = f"Todos los tickets ({total} {'resultado' if total == 1 else 'resultados'} con filtros)"
+    else:
+        titulo = "Todos los tickets"
+    chips = _chips_jefe(valores, path)
+
+    ctx = _base_context("tickets", titulo, "jefe")
+    ctx.update({
+        "rol": "jefe",
+        "roles_url": _roles_urls(path),
+        "avisos": [aviso] if aviso else [],
+        "f": valores,
+        "errores": errores,
+        "hay_filtros": hay_filtros,
+        "chips": chips,
+        "filtros_activos_count": len(chips),
+        "tickets": visibles,
+        "resumen": resumen,
+        "paginacion": paginacion,
+        "categorias": [{"valor": k, "nombre": v[0]} for k, v in CATEGORIAS_FILTRO.items()],
+        "estados": [{"valor": k, "nombre": v["nombre"]} for k, v in fixtures.ESTADOS.items()],
+        "prioridades": [{"valor": k, "nombre": v["nombre"]} for k, v in fixtures.PRIORIDADES.items()],
+        "tipos": [{"valor": k, "nombre": v} for k, v in fixtures.TIPOS.items()],
+        "areas": fixtures.AREAS,
+        "hoy": hoy,
+        "limpiar_url": path,
+        "reintentar_url": path + _qs_jefe(valores),
+        # Configuración de la tabla/tarjetas compartidas (ajuste compatible con V1)
+        "tabla_mostrar_area": True,
+        "tabla_rol": "jefe",
+        "tabla_caption": "Todos los tickets de la mesa de ayuda",
+        "lista_label": "Todos los tickets",
+    })
+    return render(request, "v2/proto/jefe_tickets.html", ctx)
+
+
+@proto_only
+def jefe_triage(request):
+    hoy = date.today()
+    rol, aviso = _rol_de_pagina(request, "jefe")
+    if rol != "jefe":
+        return _denegar(request, rol)
+    vista = request.GET.get("vista", "")
+    tickets = [] if vista == "vacio" else tickets_sin_triage(hoy)
+    for t in tickets:
+        t["antiguo"] = t["dias"] >= UMBRAL_ANTIGUEDAD_DIAS
+    sin_clasificar = [t for t in tickets if t["estado_categoria"] is None]
+    titulo = "No pudimos cargar los tickets sin triage" if vista == "error" else "Sin triage"
+    ctx = _base_context("triage", titulo, "jefe")
+    ctx.update({
+        "rol": "jefe",
+        "roles_url": _roles_urls(request.path),
+        "avisos": [aviso] if aviso else [],
+        "vista": vista if vista in ("error", "vacio") else "",
+        "tickets": tickets,
+        "sin_clasificar": sin_clasificar,
+        "reintentar_url": request.path,
+    })
+    return render(request, "v2/proto/jefe_triage.html", ctx)

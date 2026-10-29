@@ -1,0 +1,10 @@
+{% comment %}
+Componente (V3): pestañas como enlaces (navegación por URL, sin widgets ARIA complejos).
+La pestaña actual usa aria-current="page". Entradas: pestanas [{nombre, count, url, actual}], tabs_label.
+{% endcomment %}<nav class="tabs" aria-label="{{ tabs_label|default:'Filtrar por estado' }}">
+  <ul class="tabs__list" role="list">
+    {% for p in pestanas %}
+    <li><a class="tabs__link" href="{{ p.url }}"{% if p.actual %} aria-current="page"{% endif %}>{{ p.nombre }}<span class="tabs__count">{{ p.count }}<span class="sr-only"> {% if p.count == 1 %}ticket{% else %}tickets{% endif %}</span></span></a></li>
+    {% endfor %}
+  </ul>
+</nav>

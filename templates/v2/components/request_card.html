@@ -1,0 +1,13 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente (V3): tarjeta de solicitud para el Cliente. El estado real es lo principal y una frase en
+lenguaje simple explica qué significa según su CATEGORÍA. Sin datos internos (área, agentes, prioridad).
+Entradas: ticket {id, asunto, estado_*, frase, apertura, finalizado}, rol.
+{% endcomment %}<li class="request-card{% if ticket.finalizado %} request-card--done{% endif %}">
+  <div class="request-card__top">
+    {% include "v2/components/status_badge.html" %}
+    <span class="cell-id">#{{ ticket.id }}</span>
+  </div>
+  <h3 class="request-card__title"><a href="{% url 'proto:ticket_detalle' ticket.id %}?rol=cliente">{{ ticket.asunto }}</a></h3>
+  <p class="request-card__phrase">{{ ticket.frase }}</p>
+  <p class="request-card__meta">Abierta el <time class="tnum" datetime="{{ ticket.apertura|date:'Y-m-d' }}">{{ ticket.apertura|date:"d/m/Y" }}</time></p>
+</li>

@@ -1,0 +1,4 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente (V3): celda de área. "Sin asignar" se destaca con icono + texto (no solo color).
+Entrada: ticket.area (None = sin área asignada).
+{% endcomment %}{% if ticket.area %}<span class="area-cell">{{ ticket.area }}</span>{% else %}<span class="area-cell area-cell--none">{% icon "triangle-alert" %}Sin asignar</span>{% endif %}

@@ -1,0 +1,95 @@
+{% extends "v2/proto/_layout.html" %}
+{% load tiquetera_v2 %}
+{% comment %}
+Pantalla V3: «Mis tickets» (rol Cliente, simulado). Pestañas Abiertos · Finalizados · Todos.
+«Finalizados» agrupa las categorías Resuelto y No aplica, pero cada ticket muestra su estado REAL.
+Sin datos internos (área, agentes, prioridad). Datos ficticios; sin POST.
+{% endcomment %}
+
+{% block breadcrumb %}<ol><li><span aria-current="page">Mis tickets</span></li></ol>{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div class="page-header__text">
+    <p class="overline">{{ agente.nombre }}</p>
+    <h1>Mis tickets</h1>
+    <p class="page-header__subtitle">{% if vista == "error" %}No pudimos cargar tus solicitudes en este momento.{% elif total_propios %}Aquí ves el estado de cada solicitud que has enviado.{% else %}Todavía no has enviado solicitudes.{% endif %}</p>
+  </div>
+  <a class="btn btn--primary" href="{% url 'proto:fuera_de_alcance' %}">{% icon "plus" %}Crear ticket</a>
+</header>
+
+{% for tipo, titulo, texto in avisos %}
+<div class="alert alert--{{ tipo }}" role="alert">{% icon "triangle-alert" %}<div class="alert__body"><p class="alert__title">{{ titulo }}</p><p>{{ texto }}</p></div></div>
+{% endfor %}
+
+{% if vista == "error" %}
+<section class="panel" aria-labelledby="error-titulo">
+  <div class="empty" role="alert">
+    <div class="empty__art empty__art--error">{% icon "triangle-alert" %}</div>
+    <h2 class="empty__title" id="error-titulo">No pudimos cargar tus tickets</h2>
+    <p class="empty__text">El problema es nuestro, no de tu conexión. Vuelve a intentarlo en unos segundos.</p>
+    <div class="empty__actions"><a class="btn btn--secondary" href="{{ reintentar_url }}">{% icon "refresh-cw" %}Reintentar</a></div>
+    <p class="empty__ref">Referencia del error: PROTO-500 (simulado)</p>
+  </div>
+</section>
+
+{% elif not total_propios %}
+<section class="panel" aria-labelledby="sin-titulo">
+  <div class="empty">
+    <div class="empty__art">{% icon "inbox" %}</div>
+    <h2 class="empty__title" id="sin-titulo">Aún no has creado solicitudes</h2>
+    <p class="empty__text">Cuando necesites ayuda, crea un ticket y podrás seguir su estado desde aquí.</p>
+    <div class="empty__actions"><a class="btn btn--secondary" href="{% url 'proto:fuera_de_alcance' %}">{% icon "plus" %}Crear mi primer ticket</a></div>
+  </div>
+</section>
+
+{% else %}
+<section class="panel client-inbox" aria-labelledby="lista-titulo">
+  <h2 class="sr-only" id="lista-titulo">Solicitudes: {{ pestana_nombre }}</h2>
+  <div class="client-inbox__bar">
+    {% include "v2/components/tabs.html" with tabs_label="Filtrar mis tickets" %}
+    <form method="get" action="" class="client-inbox__search" role="search" aria-label="Buscar en mis tickets">
+      <input type="hidden" name="pestana" value="{{ pestana }}">
+      <label class="sr-only" for="f-q">Buscar por asunto o número</label>
+      <div class="control-search">
+        {% icon "search" %}
+        <input class="control" type="search" id="f-q" name="q" value="{{ q }}" maxlength="100" placeholder="Buscar por asunto o #número" autocomplete="off">
+      </div>
+      <button type="submit" class="btn btn--secondary">Buscar</button>
+    </form>
+  </div>
+  {% if pestana == "finalizados" %}
+  <p class="client-inbox__hint">Incluye solicitudes <strong>resueltas</strong> y las que se cerraron porque <strong>no aplicaban</strong>. Cada una muestra su estado real.</p>
+  {% endif %}
+  <p class="results-count client-inbox__count" role="status">
+    {% if tickets %}{{ tickets|length }} {% if tickets|length == 1 %}solicitud{% else %}solicitudes{% endif %}{% if q %} para «{{ q }}» · <a href="{{ limpiar_url }}">Quitar búsqueda</a>{% endif %}
+    {% else %}Sin resultados{% endif %}
+  </p>
+
+  {% if tickets %}
+  <ul class="request-list" role="list" aria-label="Solicitudes: {{ pestana_nombre }}">
+    {% for ticket in tickets %}{% include "v2/components/request_card.html" %}{% endfor %}
+  </ul>
+  {% elif q %}
+  <div class="empty">
+    <div class="empty__art">{% icon "search" %}</div>
+    <h3 class="empty__title">No encontramos solicitudes con «{{ q }}»</h3>
+    <p class="empty__text">Revisa el número o prueba con otras palabras del asunto.</p>
+    <div class="empty__actions"><a class="btn btn--secondary" href="{{ limpiar_url }}">{% icon "x" %}Quitar búsqueda</a></div>
+  </div>
+  {% elif pestana == "abiertos" %}
+  <div class="empty">
+    <div class="empty__art empty__art--success">{% icon "circle-check" %}</div>
+    <h3 class="empty__title">No tienes solicitudes abiertas</h3>
+    <p class="empty__text">Todas tus solicitudes están finalizadas. Puedes revisarlas en la pestaña «Finalizados».</p>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty__art">{% icon "inbox" %}</div>
+    <h3 class="empty__title">Aún no tienes solicitudes finalizadas</h3>
+    <p class="empty__text">Cuando el equipo cierre una solicitud, aparecerá aquí con su estado.</p>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

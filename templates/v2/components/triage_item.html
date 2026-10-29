@@ -1,0 +1,21 @@
+{% load tiquetera_v2 %}{% comment %}
+Componente (V3): ticket pendiente de asignación de área. Incluye un extracto de la descripción para
+decidir sin abrirlo, y la acción "Asignar área", que lleva al formulario de edición de V2 (no crea un
+flujo nuevo). Si el estado está sin clasificar, se indica junto al ticket.
+Entrada: ticket.
+{% endcomment %}<li class="triage-item{% if ticket.prioridad == 'alta' %} is-high{% endif %}">
+  <div class="triage-item__main">
+    <div class="triage-item__top">
+      <span class="cell-id">#{{ ticket.id }}</span>
+      {% include "v2/components/status_badge.html" %}
+      {% include "v2/components/priority.html" %}
+    </div>
+    <h3 class="triage-item__title"><a href="{% url 'proto:ticket_detalle' ticket.id %}?rol=jefe">{{ ticket.asunto }}</a></h3>
+    <p class="triage-item__excerpt">{{ ticket.observacion }}</p>
+    <p class="triage-item__meta"><span>{{ ticket.cliente }}</span><span>{{ ticket.tipo_nombre }}</span>{% include "v2/components/ticket_age.html" %}</p>
+    {% if ticket.estado_categoria is None %}<p class="triage-item__note">{% icon "circle-help" %}Además de asignarle un área, su estado «{{ ticket.estado_nombre }}» necesita clasificarse.</p>{% endif %}
+  </div>
+  <div class="triage-item__action">
+    <a class="btn btn--secondary" href="{% url 'proto:ticket_detalle' ticket.id %}?rol=jefe&amp;accion=editar">{% icon "pencil" %}Asignar área<span class="sr-only"> al ticket #{{ ticket.id }}</span></a>
+  </div>
+</li>
