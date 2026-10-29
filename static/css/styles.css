@@ -48,23 +48,32 @@
     --color-neutral-bg: #f1f2f4;
 }
 
+/* 4.4.1 (seguimiento): los 3 archivos referenciados abajo son TTF real
+   (firma binaria 00 01 00 00, confirmada byte a byte), no WOFF2 -- el
+   descriptor format('woff2') era incorrecto en los tres desde antes de
+   esta conversacion. Un navegador que intente parsear un TTF como WOFF2
+   puede rechazar la carga y caer silenciosamente al font-family de
+   respaldo de cada regla que lo use. Se corrige unicamente el
+   descriptor de formato a 'truetype' (el que realmente corresponde a
+   estos archivos); no cambia el archivo referenciado, el nombre de la
+   familia, el peso/estilo declarado ni la fuente que se espera ver. */
 @font-face {
     font-family: 'MiFuente';
-    src: url('../fonts/Raleway-Bold.ttf') format('woff2');
+    src: url('../fonts/Raleway-Bold.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'Mititulo';
-    src: url('../fonts/Raleway-Black.ttf') format('woff2');
+    src: url('../fonts/Raleway-Black.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
 }
 
 @font-face {
     font-family: 'MiParrafo';
-    src: url('../fonts/Raleway-Medium.ttf') format('woff2');
+    src: url('../fonts/Raleway-Medium.ttf') format('truetype');
     font-weight: normal;
     font-style: normal;
 }
@@ -264,6 +273,108 @@ textarea {
     justify-content: center;
     color: var(--color-secondary);
     height: 20px;
+}
+
+/* 4.4.1: estilos aislados del formulario de creacion de tickets
+   (create_ticket.html). El template conserva la clase register-form
+   (otras pantallas -- customer_complete_profile, agent_complete_profile,
+   agent_signup -- siguen usandola sin cambios), pero ninguna regla de
+   .register-form se toca aqui: todo lo nuevo vive bajo .create-ticket-form,
+   que por ahora solo aplica este template, asi que no puede afectar
+   ninguna otra pantalla por accidente. */
+.create-ticket-form .form-group {
+    flex-wrap: wrap;
+}
+
+.create-ticket-form .form-group input,
+.create-ticket-form .form-group select,
+.create-ticket-form .form-group textarea {
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    /* Ni .register-form ni esta regla fijaban font-family antes de esto:
+       input/select/textarea caian cada uno en la fuente por defecto del
+       navegador (distinta entre si, el placeholder de textarea en
+       particular suele caer en monospace) en vez de en la tipografia del
+       proyecto. 'MiParrafo' ya esta declarada via @font-face mas arriba
+       en este mismo archivo; sans-serif es el respaldo si esa fuente no
+       llegara a cargar. */
+    font-family: 'MiParrafo', sans-serif;
+}
+
+/* El resize nativo del navegador (resize: both por defecto) deja el
+   tirador diagonal de la esquina inferior derecha superpuesto sobre el
+   border-radius del textarea (regla global `textarea{}`, sin tocar),
+   lo que se ve como una esquina mal cortada/despareja. Se acota a solo
+   vertical -- el ancho ya esta fijo en 100%, redimensionar horizontal no
+   tenia sentido funcional y era justamente lo que generaba el corte. */
+.create-ticket-form .form-group textarea {
+    resize: vertical;
+}
+
+.create-ticket-form .form-group label {
+    color: var(--color-text);
+}
+
+.create-ticket-form .errorlist {
+    list-style: none;
+    margin: 4px 0 0 0;
+    padding: 0;
+    flex-basis: 100%;
+}
+
+.create-ticket-form .errorlist li {
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger-text);
+    border-radius: 8px;
+    padding: 4px 10px;
+    margin-top: 4px;
+    font-size: 14px;
+}
+
+/* form.non_field_errors se renderiza dentro de <form>, justo despues del
+   csrf_token, pero fuera de cualquier .form-group -- no es un item flex,
+   solo necesita el mismo tratamiento visual de la lista, sin flex-basis. */
+.create-ticket-form form > .errorlist {
+    margin-bottom: 15px;
+}
+
+.create-ticket-form .save_button {
+    font-family: 'MiParrafo';
+    font-weight: 400;
+    font-size: 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+}
+
+/* 4.4.1 (seguimiento de coherencia visual): signin.html y
+   customer_signup.html comparten .auth-form -- mismos tokens de 4.1 que
+   ya se le aplicaron a .create-ticket-form, para que ambos formularios
+   usen la misma paleta. No se toca .register-form (seguiria afectando a
+   agent_signup/*_complete_profile sin este cambio) ni la estructura o
+   validacion de ninguno de los dos templates. */
+.auth-form .form-group input,
+.auth-form .form-group select,
+.auth-form .form-group textarea {
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+.auth-form .form-group label {
+    color: var(--color-text);
+}
+
+/* El boton de "Ingresar"/"Registrar" no tiene clase ni envoltorio <p>,
+   asi que no hereda ninguna fuente del proyecto (la regla generica
+   `button` no fija font-family) -- cae en la fuente por defecto del
+   navegador, a diferencia del boton de create_ticket.html, que si la fija
+   explicitamente. Se reutiliza la misma fuente ya usada en el resto del
+   sitio, sin agregar icono ni cambiar layout. */
+.auth-form button[type="submit"] {
+    font-family: 'MiParrafo';
 }
 
 .table_container {
@@ -554,6 +665,37 @@ textarea {
 
     .input_container .filter_button {
         margin: 6px 0 0 0;
+    }
+
+    /* 4.4.1: mismo mecanismo ya aprobado arriba para .filters_container,
+       aplicado a .create-ticket-form -- label+control en columna, control
+       a ancho completo. Acotado a .create-ticket-form, no afecta a
+       .register-form .form-group en ningun otro template. */
+    .create-ticket-form .form-group {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .create-ticket-form .form-group label {
+        width: auto;
+        margin-right: 0;
+        margin-bottom: 4px;
+        text-align: left;
+    }
+
+    .create-ticket-form .form-group input,
+    .create-ticket-form .form-group select,
+    .create-ticket-form .form-group textarea {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        flex: initial;
+    }
+
+    .create-ticket-form .save_button {
+        width: 100%;
+        box-sizing: border-box;
+        margin: 15px 0 0 0;
     }
 }
 

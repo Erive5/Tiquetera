@@ -5,52 +5,64 @@
 <div class="title">
     <h1>Crear Ticket</h1>
 </div>
-<div class="content_box register-form">
+{% comment %}
+4.4.1: se retira el {% if error %} generico que existia aqui -- en
+views.py (create_ticket) esa variable se fija SIEMPRE al mismo string
+('Hubo un problema al cargar el formulario'), SIEMPRE junto al form
+invalido real (nunca sola, nunca con otro contenido). Era redundante con
+los errores reales de form/campo que ahora se muestran abajo, y ademas
+no describia el error real. No se toco views.py: solo se dejo de leer
+esa variable en el template.
+{% endcomment %}
+<div class="content_box register-form create-ticket-form">
     <div class="data_container">
         <div class="user_info_container">
             <form action="" method="post">
                 {% csrf_token %}
+                {{ form.non_field_errors }}
                 <div class="form-group">
                     {{ form.issue.label_tag }}
                     {{ form.issue }}
+                    {{ form.issue.errors }}
                 </div>
                 <div class="form-group">
                     {{ form.priority.label_tag }}
                     {{ form.priority }}
+                    {{ form.priority.errors }}
                 </div>
                 <div class="form-group">
                     {{ form.type.label_tag }}
                     {{ form.type }}
+                    {{ form.type.errors }}
                 </div>
                 {% if user_type != "Cliente" %}
                 <div class="form-group">
                     {{ form.status.label_tag }}
                     {{ form.status }}
+                    {{ form.status.errors }}
                 </div>
                 <div class="form-group">
                     {{ form.customer.label_tag }}
                     {{ form.customer }}
+                    {{ form.customer.errors }}
                 </div>
                 {% endif %}
                 <div class="form-group">
                     {{ form.observation.label_tag }}
                     {{ form.observation }}
+                    {{ form.observation.errors }}
                 </div>
                 {% if user_type != "Cliente" %}
                 <div class="form-group">
                     {{ form.asigned_area.label_tag }}
                     {{ form.asigned_area }}
+                    {{ form.asigned_area.errors }}
                 </div>
                 {% endif %}
-                <button type="submit">Guardar</button>
+                <button type="submit" class="save_button"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
             </form>
         </div>
     </div>
 </div>
-{% if error %}
-    <p>{{ error }}</p> 
-{% endif %}
-
-
 </div>
 {% endblock %}

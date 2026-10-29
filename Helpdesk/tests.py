@@ -2681,6 +2681,159 @@ class CreateTicketAuthorizationTests(TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Incremento 4.4.1: presentacion, responsive y mensajes de validacion de
+# create_ticket.html. No se toca views.py/forms.py -- estas pruebas
+# verifican el HTML renderizado (errores de campo/generales visibles,
+# clases de aislamiento, boton), mas una confirmacion a nivel de HTML
+# (no solo de form.fields) de que los campos por rol siguen intactos.
+# ---------------------------------------------------------------------------
+
+class CreateTicketFormUxTests(TestCase):
+    def setUp(self):
+        call_command("seed_roles")
+
+    def _cliente(self, suffix):
+        user = User.objects.create_user(username=f"cliente_ux_{suffix}@test.cl", password="x")
+        profile = Profile.objects.create(user=user, rut=f"7{suffix}-0", phone=f"70{suffix}")
+        set_user_role_group(user, ROLE_CLIENTE)
+        return user, profile
+
+    def _agente(self, suffix):
+        user = User.objects.create_user(username=f"agente_ux_{suffix}@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut=f"8{suffix}-0", phone=f"80{suffix}")
+        set_user_role_group(user, ROLE_AGENTE)
+        return user, profile
+
+    def _jefe(self, suffix):
+        user = User.objects.create_user(username=f"jefe_ux_{suffix}@test.cl", password="x", is_staff=True)
+        profile = Profile.objects.create(user=user, rut=f"9{suffix}-0", phone=f"90{suffix}")
+        set_user_role_group(user, ROLE_JEFE_DE_MESA)
+        return user, profile
+
+    # --- clases de aislamiento ---
+
+    def test_formulario_conserva_register_form_y_agrega_create_ticket_form(self):
+        user, _ = self._cliente("ux1")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("create_ticket"))
+        content = resp.content.decode()
+        self.assertIn('class="content_box register-form create-ticket-form"', content)
+
+    def test_boton_guardar_usa_save_button_sin_envoltorio_p(self):
+        user, _ = self._cliente("ux2")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("create_ticket"))
+        content = resp.content.decode()
+        self.assertIn('<button type="submit" class="save_button">', content)
+        self.assertIn("Guardar", content)
+        self.assertIn("fa-floppy-disk", content)
+        # Sin <p> dentro del boton, a diferencia de edit_ticket.html/etc.
+        boton_idx = content.index('<button type="submit" class="save_button">')
+        cierre_idx = content.index("</button>", boton_idx)
+        self.assertNotIn("<p>", content[boton_idx:cierre_idx])
+
+    # --- errores de campo y generales ---
+
+    def test_cliente_post_invalido_muestra_error_de_campo_issue(self):
+        user, _ = self._cliente("ux3")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("create_ticket"), {"issue": "", "observation": "obs"})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('class="errorlist"', content)
+        # El mensaje generico anterior ya no se usa.
+        self.assertNotIn("Hubo un problema al cargar el formulario", content)
+
+    def test_agente_post_invalido_muestra_error_de_campo(self):
+        user, _ = self._agente("ux4")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("create_ticket"), {"issue": "", "observation": "obs"})
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn('class="errorlist"', content)
+        self.assertNotIn("Hubo un problema al cargar el formulario", content)
+
+    def test_error_general_se_muestra_cuando_no_hay_estado_inicial(self):
+        # Mismo camino de codigo que ya existia en views.py (create_ticket):
+        # si no existe el Status 'A resolución', se agrega un error de
+        # formulario no asociado a ningun campo (form.add_error(None, ...)).
+        # No se modifico esa logica -- solo se verifica que ahora se vea.
+        Status.objects.filter(status_description="A resolución").delete()
+        user, _ = self._cliente("ux5")
+        priority = Priority.objects.create(priority_description="P-ux5")
+        type_ = Type.objects.create(type_description="Tp-ux5")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("create_ticket"), {
+            "issue": "No enciende el equipo",
+            "priority": priority.id,
+            "type": type_.id,
+            "observation": "obs",
+        })
+        self.assertEqual(resp.status_code, 200)
+        content = resp.content.decode()
+        self.assertIn("No fue posible determinar el estado inicial del ticket", content)
+        self.assertEqual(Ticket.objects.count(), 0)
+
+    def test_non_field_errors_se_renderiza_dentro_del_elemento_form(self):
+        # 4.4.1 (seguimiento): form.non_field_errors se movio a estar
+        # dentro de <form> (despues de csrf_token), no antes de el.
+        Status.objects.filter(status_description="A resolución").delete()
+        user, _ = self._cliente("ux9")
+        priority = Priority.objects.create(priority_description="P-ux9")
+        type_ = Type.objects.create(type_description="Tp-ux9")
+        self.client.force_login(user)
+        resp = self.client.post(reverse("create_ticket"), {
+            "issue": "No enciende el equipo",
+            "priority": priority.id,
+            "type": type_.id,
+            "observation": "obs",
+        })
+        content = resp.content.decode()
+        form_open = content.index("<form")
+        # Django renderiza form.non_field_errors con la clase adicional
+        # "nonfield" (class="errorlist nonfield"), distinta de los
+        # errorlist simples de cada campo.
+        errorlist = content.index("errorlist nonfield", form_open)
+        form_close = content.index("</form>", form_open)
+        self.assertTrue(form_open < errorlist < form_close)
+
+    # --- campos por rol, confirmados en el HTML renderizado (no solo en
+    # form.fields, que ya cubren los tests de CreateTicketAuthorizationTests) ---
+
+    def test_cliente_no_ve_en_el_html_los_campos_administrativos(self):
+        user, _ = self._cliente("ux6")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("create_ticket"))
+        content = resp.content.decode()
+        self.assertNotIn('id="id_status"', content)
+        self.assertNotIn('id="id_customer"', content)
+        self.assertNotIn('id="id_asigned_area"', content)
+        # Los campos que si le corresponden siguen presentes.
+        self.assertIn('id="id_issue"', content)
+        self.assertIn('id="id_priority"', content)
+        self.assertIn('id="id_type"', content)
+        self.assertIn('id="id_observation"', content)
+
+    def test_agente_ve_en_el_html_todos_los_campos(self):
+        user, _ = self._agente("ux7")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("create_ticket"))
+        content = resp.content.decode()
+        for field_id in ["id_issue", "id_priority", "id_type", "id_status",
+                          "id_customer", "id_observation", "id_asigned_area"]:
+            self.assertIn('id="%s"' % field_id, content)
+
+    def test_jefe_de_mesa_ve_en_el_html_todos_los_campos(self):
+        user, _ = self._jefe("ux8")
+        self.client.force_login(user)
+        resp = self.client.get(reverse("create_ticket"))
+        content = resp.content.decode()
+        for field_id in ["id_issue", "id_priority", "id_type", "id_status",
+                          "id_customer", "id_observation", "id_asigned_area"]:
+            self.assertIn('id="%s"' % field_id, content)
+
+
+# ---------------------------------------------------------------------------
 # Incremento 2.3: seguridad de customer_complete_profile
 # ---------------------------------------------------------------------------
 
