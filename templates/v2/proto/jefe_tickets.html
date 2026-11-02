@@ -14,7 +14,7 @@ tabla/tarjetas y paginación de V1, con columna de área (incluye «Sin asignar�
     <h1>Todos los tickets</h1>
     <p class="page-header__subtitle">{% if f.vista == "error" %}No pudimos cargar los tickets en este momento.{% else %}<strong>{{ resumen.total }}</strong> tickets en total · <strong>{{ resumen.abiertos }}</strong> abiertos{% endif %}</p>
   </div>
-  <a class="btn btn--primary" href="{% url 'proto:jefe_triage' %}">{% icon "circle-alert" %}Revisar sin triage{% if resumen.triage %} ({{ resumen.triage }}){% endif %}</a>
+  <a class="btn btn--primary" href="{% url 'proto:jefe_triage' %}">{% icon "circle-alert" %}Asignar áreas{% if resumen.triage %} ({{ resumen.triage }}){% endif %}</a>
 </header>
 
 {% for tipo, titulo, texto in avisos %}
@@ -47,7 +47,7 @@ tabla/tarjetas y paginación de V1, con columna de área (incluye «Sin asignar�
     </li>
     <li>
       <a class="stat" href="{% url 'proto:jefe_triage' %}">
-        <span class="stat__label">Sin triage</span>
+        <span class="stat__label">Pendientes de asignación</span>
         <span class="stat__value">{{ resumen.triage }}</span>
         <span class="stat__icon stat__icon--aging">{% icon "circle-alert" %}</span>
         <span class="stat__meta">Esperan que asignes un área</span>

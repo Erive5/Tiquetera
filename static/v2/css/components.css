@@ -535,6 +535,9 @@
 
   /* --- V3 · Bandejas de Cliente y Jefe de Mesa ---------------------------------- */
   .stats.stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* V3.1: misma altura aunque una etiqueta ocupe dos líneas («Pendientes de asignación»). */
+  .stats.stats--4 > li { display: flex; }
+  .stats.stats--4 .stat { flex: 1 1 auto; align-content: start; }
 
   .filters__grid--wide { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .filters__grid--wide .field--search { grid-column: 1 / 4; grid-row: 1; }

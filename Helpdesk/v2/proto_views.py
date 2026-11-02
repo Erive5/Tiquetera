@@ -48,7 +48,7 @@ INICIO_POR_ROL = {"agente": "proto:bandeja", "jefe": "proto:jefe_tickets", "clie
 
 
 def tickets_sin_triage(hoy=None):
-    """Regla de prototipo para «Sin triage» (decisión pendiente para la integración, ver v3-entrega):
+    """Regla de prototipo para «Pendientes de asignación» (ruta interna: triage) (decisión pendiente para la integración, ver v3-entrega):
     tickets SIN área asignada que NO están finalizados. «No finalizado» incluye la categoría
     abierta y también los estados SIN CLASIFICAR (categoría None), para que un ticket sin área
     con un estado pendiente de clasificación no desaparezca de la atención del Jefe de Mesa.
@@ -63,7 +63,7 @@ def _nav(activo, rol="agente"):
     if rol == "jefe":
         items = [
             {"clave": "tickets", "texto": "Todos los tickets", "icono": "inbox", "url_name": "proto:jefe_tickets"},
-            {"clave": "triage", "texto": "Sin triage", "icono": "circle-alert", "url_name": "proto:jefe_triage",
+            {"clave": "triage", "texto": "Pendientes de asignación", "icono": "circle-alert", "url_name": "proto:jefe_triage",
              "count": len(tickets_sin_triage())},
             {"clave": "agentes", "texto": "Agentes", "icono": "users", "url_name": fuera},
             {"clave": "catalogos", "texto": "Catálogos", "icono": "layout-grid", "url_name": fuera},
@@ -602,8 +602,10 @@ def ticket_detalle(request, ticket_id):
                        "Este ticket no se puede resolver hasta que el Jefe de Mesa clasifique el estado "
                        f"«{ticket['estado_nombre']}» como abierto o como no aplica."
                        + (" La clasificación de estados se diseñará en otro incremento." if rol == "jefe" else "")))
-    if acciones["ver_datos_internos"] and not ticket["area"] and ticket["estado_categoria"] == "open":
-        avisos.append(("warning", "Pendiente de triage",
+    if (acciones["ver_datos_internos"] and not ticket["area"]
+            and ticket["estado_categoria"] not in ("resolved", "not_applicable")):
+        # Misma regla que tickets_sin_triage(): también aplica a estados sin clasificar.
+        avisos.append(("warning", "Pendiente de asignación",
                        "Este ticket no tiene área asignada, así que todavía no aparece en ninguna bandeja de agentes."
                        + (" Asígnale un área desde «Editar»." if rol == "jefe" else "")))
 
@@ -642,7 +644,7 @@ def _roles_urls(path):
 
 
 # =============================================================================
-# V3 — Bandejas de Cliente («Mis tickets») y Jefe de Mesa («Todos», «Sin triage»)
+# V3 — Bandejas de Cliente («Mis tickets») y Jefe de Mesa («Todos», «Pendientes de asignación»)
 # =============================================================================
 
 FINALIZADAS = ("resolved", "not_applicable")
@@ -979,7 +981,7 @@ def jefe_triage(request):
     for t in tickets:
         t["antiguo"] = t["dias"] >= UMBRAL_ANTIGUEDAD_DIAS
     sin_clasificar = [t for t in tickets if t["estado_categoria"] is None]
-    titulo = "No pudimos cargar los tickets sin triage" if vista == "error" else "Sin triage"
+    titulo = "No pudimos cargar los tickets pendientes de asignación" if vista == "error" else "Pendientes de asignación"
     ctx = _base_context("triage", titulo, "jefe")
     ctx.update({
         "rol": "jefe",

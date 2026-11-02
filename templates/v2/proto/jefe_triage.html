@@ -1,18 +1,18 @@
 {% extends "v2/proto/_layout.html" %}
 {% load tiquetera_v2 %}
 {% comment %}
-Pantalla V3: «Sin triage» (rol Jefe de Mesa, simulado). Tickets sin área que NO están finalizados:
+Pantalla V3/V3.1: «Pendientes de asignación» (rol Jefe de Mesa, simulado; ruta interna /jefe/triage/). Tickets sin área que NO están finalizados:
 incluye la categoría abierta y también los estados SIN CLASIFICAR, para que no desaparezcan de la
 atención del Jefe (regla de prototipo, pendiente de decisión al integrar). Los más antiguos primero.
 {% endcomment %}
 
-{% block breadcrumb %}<ol><li><a href="{% url 'proto:jefe_tickets' %}">Todos los tickets</a></li><li><span aria-current="page">Sin triage</span></li></ol>{% endblock %}
+{% block breadcrumb %}<ol><li><a href="{% url 'proto:jefe_tickets' %}">Todos los tickets</a></li><li><span aria-current="page">Pendientes de asignación</span></li></ol>{% endblock %}
 
 {% block content %}
 <header class="page-header">
   <div class="page-header__text">
     <p class="overline">Jefe de Mesa</p>
-    <h1>Sin triage</h1>
+    <h1>Pendientes de asignación</h1>
     <p class="page-header__subtitle">{% if vista == "error" %}No pudimos cargar los tickets en este momento.{% elif tickets %}<strong>{{ tickets|length }}</strong> {% if tickets|length == 1 %}ticket espera{% else %}tickets esperan{% endif %} que les asignes un área · los más antiguos primero{% else %}No hay tickets esperando asignación.{% endif %}</p>
   </div>
 </header>
@@ -25,7 +25,7 @@ atención del Jefe (regla de prototipo, pendiente de decisión al integrar). Los
 <section class="panel" aria-labelledby="error-titulo">
   <div class="empty" role="alert">
     <div class="empty__art empty__art--error">{% icon "triangle-alert" %}</div>
-    <h2 class="empty__title" id="error-titulo">No pudimos cargar los tickets sin triage</h2>
+    <h2 class="empty__title" id="error-titulo">No pudimos cargar los tickets pendientes de asignación</h2>
     <p class="empty__text">El problema es del servidor, no de tu conexión. Vuelve a intentarlo en unos segundos.</p>
     <div class="empty__actions"><a class="btn btn--secondary" href="{{ reintentar_url }}">{% icon "refresh-cw" %}Reintentar</a></div>
     <p class="empty__ref">Referencia del error: PROTO-500 (simulado)</p>

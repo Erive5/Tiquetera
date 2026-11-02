@@ -418,7 +418,17 @@ class ProtoDetalleTicketTests(_SinRender, TestCase):
 
     def test_triage_avisa_al_jefe(self):
         _, html = self._html("9150/?rol=jefe")
-        self.assertIn("Pendiente de triage", html)
+        self.assertIn("Pendiente de asignación", html)
+
+    def test_aviso_de_asignacion_tambien_para_estado_sin_clasificar(self):
+        # V3.1: misma regla que la bandeja «Pendientes de asignación» (incluye sin clasificar).
+        _, html = self._html("9213/?rol=jefe")
+        self.assertIn("Pendiente de asignación", html)
+        self.assertIn("Estado sin clasificar", html)
+
+    def test_aviso_de_asignacion_no_aparece_si_esta_finalizado(self):
+        _, html = self._html("8920/?rol=jefe")
+        self.assertNotIn("Pendiente de asignación", html)
 
     def test_agente_fuera_de_alcance_recibe_403_sin_datos_del_ticket(self):
         resp, html = self._html("9201/", 403)
@@ -579,6 +589,19 @@ class ProtoJefeTriageTests(_SinRender, TestCase):
 
     def test_estado_vacio(self):
         self.assertContains(self.client.get(TRIAGE + "?vista=vacio"), "Todo asignado")
+
+    def test_terminologia_pendientes_de_asignacion(self):
+        # V3.1: el nombre visible es «Pendientes de asignación»; la ruta interna /jefe/triage/ se conserva.
+        import re
+        for url in (TRIAGE, TRIAGE + "?vista=vacio", TRIAGE + "?vista=error", JEFE, "/_proto/tickets/9150/?rol=jefe", "/_proto/"):
+            html = self.client.get(url).content.decode()
+            visible = re.sub(r"<[^>]+>", " ", re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.S))
+            with self.subTest(url=url):
+                self.assertNotIn("triage", visible.lower())
+                self.assertNotRegex(html, r'(aria-label|title)="[^"]*[Tt]riage')
+        resp = self.client.get(TRIAGE)
+        self.assertContains(resp, "<h1>Pendientes de asignación</h1>", html=False)
+        self.assertContains(self.client.get(JEFE), "Asignar áreas (5)")
 
 
 # --- Reglas estáticas sobre el código fuente ----------------------------------------
