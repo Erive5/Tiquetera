@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 from .models import *
 from .forms import *
 # from .views import filter_customers, filter_agents
@@ -16,7 +17,32 @@ class StatusAdmin(admin.ModelAdmin):
     list_display= [
         'id',
         'status_description',
+        'category',
+        'system_key',
     ]
+    list_filter = ['category']
+    readonly_fields = ['system_key']
+
+    # E1: la clave nunca se edita; en los estados de sistema tampoco el texto ni
+    # la categoría, y no se pueden eliminar (borrar un estado borraría en
+    # cascada sus tickets). Las CheckConstraint del modelo se validan además en
+    # el formulario del admin y en la base de datos.
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None and obj.is_system:
+            return ['status_description', 'category', 'system_key']
+        return ['system_key']
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.is_system:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        # Acción masiva «eliminar seleccionados»: si la selección incluye un
+        # estado de sistema no se elimina nada (403), en vez de borrar en parte.
+        if queryset.filter(system_key__isnull=False).exists():
+            raise PermissionDenied("La selección incluye estados del sistema, que no se pueden eliminar.")
+        super().delete_queryset(request, queryset)
 admin.site.register(Status, StatusAdmin)    
 
 class TypeAdmin(admin.ModelAdmin):

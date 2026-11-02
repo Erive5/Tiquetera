@@ -212,6 +212,13 @@ class create_status_form(forms.ModelForm):
         model = Status
         fields = ['status_description']
 
+    def save(self, commit=True):
+        # E1 / D2b: un estado creado desde «Gestión estados» es personalizado y
+        # de categoría abierta. Editar uno existente no cambia su categoría.
+        if self.instance.pk is None:
+            self.instance.category = Status.CATEGORY_OPEN
+        return super().save(commit=commit)
+
 class create_area_form(forms.ModelForm):
     area_description = forms.CharField(label="Descripción Área", widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ingrese nombre área trabajo'})
     ) 

@@ -554,7 +554,8 @@ def create_ticket(request):
     form = build_form(request.POST)
     if form.is_valid():
         try:
-            current_status = Status.objects.get(status_description='A resolución')
+            # E1: el estado inicial se busca por clave de sistema (ni texto ni id).
+            current_status = Status.objects.system(Status.KEY_INITIAL)
         except (Status.DoesNotExist, Status.MultipleObjectsReturned):
             # 2.2C.4, regla 4: el estado inicial se busca por descripcion
             # (no por ID hardcodeado); si no existe o es ambiguo, no debe
@@ -754,7 +755,7 @@ def solve_ticket(request,id):
             # closure_agent no debe poder falsificarse via POST: se fija a
             # quien realmente esta resolviendo el ticket.
             ticket.closure_agent = get_object_or_404(Profile, user=request.user)
-            current_status = Status.objects.get(status_description='Resuelto')
+            current_status = Status.objects.system(Status.KEY_RESOLVED)  # E1: por clave
             ticket.status = current_status
             ticket.closing_date = timezone.now()
             ticket = form.save()
@@ -791,7 +792,8 @@ def solve_button (request, id):
         raise PermissionDenied
 
     ticket.closing_date = timezone.now()
-    ticket.status_id = 2  # Cambiar el status_id a 2
+    # E1: antes 'status_id = 2' fijo; ahora el estado de sistema 'resuelto' por clave.
+    ticket.status = Status.objects.system(Status.KEY_RESOLVED)
     ticket.save()  # Guardar el ticket actualizado
     return redirect('tickets')
 
@@ -1137,6 +1139,13 @@ def delete_type(request, id):
 @permission_required('Helpdesk.delete_status', raise_exception=True)
 def delete_status(request, id):
     status = get_object_or_404(Status, id=id)
+    if status.is_system:
+        # E1 (temporal): los estados de sistema no se eliminan mientras v1 dependa de ellos.
+        return render(request, 'tickets/statuses.html', {
+            'statuses': Status.objects.all(),
+            'form': create_status_form(),
+            'error': 'No se puede eliminar: es un estado del sistema.',
+        })
     if status.ticket_set.exists():
         return render(request, 'tickets/statuses.html', {
             'statuses': Status.objects.all(),
