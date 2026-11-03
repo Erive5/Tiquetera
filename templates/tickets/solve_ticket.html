@@ -30,11 +30,17 @@
 
       <div class="ticket_edit_main">
         <h3>Resolución</h3>
+        {% if no_abierto %}
+        {% comment %}R1b: ticket no abierto (respuesta 409). Sin formulario.{% endcomment %}
+        <p>Estado actual: {{ ticket.status }}.</p>
+        <p><a href="{% url 'ticket_view' ticket.id %}">Volver al detalle del ticket</a></p>
+        {% else %}
         <form method="post">
             {% csrf_token %}
             {{ form.as_p }}
             <button class="save_button" type="submit"><i class="fa-solid fa-check" aria-hidden="true"></i> Resolver</button>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>

@@ -16,6 +16,9 @@ from Helpdesk.rbac import (
     set_user_role_group, user_in_group, user_type_label,
 )
 from Helpdesk.ticket_scope import agent_can_view_customer, agent_ticket_scope_q
+from Helpdesk.ticket_actions import (
+    ResolucionNoPermitida, acciones_ticket, esta_abierto, puede_operar_ticket, resolver_ticket,
+)
 
 # USUARIOS
 def home(request):
@@ -630,7 +633,9 @@ def ticket_view(request, id):
         raise PermissionDenied
 
     user_type = get_user_type(request)
-    return render(request, 'tickets/ticket_view.html', {'ticket': ticket, 'user_type': user_type})
+    # R1b: la plantilla solo lee las acciones calculadas en el servidor.
+    acciones = acciones_ticket(request.user, ticket)
+    return render(request, 'tickets/ticket_view.html', {'ticket': ticket, 'user_type': user_type, 'acciones': acciones})
 
 @login_required
 def edit_ticket(request, id):
@@ -672,8 +677,12 @@ def edit_ticket(request, id):
     # campo disabled en un ModelForm ignora el dato enviado y usa el valor
     # inicial (el de la instancia) al validar, asi que esto es una capa
     # adicional, no un reemplazo de la reversion server-side.
-    original_customer_id = ticket.customer_id
-    original_area_id = ticket.asigned_area_id
+    # R1b: la reversion server-side se mantiene, ahora como lista explicita de
+    # campos que se pueden escribir (ver `campos` en el POST): customer nunca,
+    # asigned_area solo el Jefe de Mesa, aunque el formulario los habilitara.
+    # R1b: estado con el que se cargo la edicion. Se guarda aparte porque la
+    # validacion del ModelForm modifica `ticket` en memoria (status incluido).
+    estado_al_cargar = ticket.status_id
 
     can_resolve = ticket.solution and ticket.closure_agent and ticket.closing_date
 
@@ -686,15 +695,26 @@ def edit_ticket(request, id):
         # editable para Agente (la bandeja compartida por area no cambia).
         if not is_jefe_de_mesa:
             form.fields['asigned_area'].disabled = True
+        # R1b: editar no cierra ni reabre. En un ticket abierto solo se ofrecen
+        # estados de categoria abierta (un POST manipulado con un estado de
+        # cierre o sin clasificar falla la validacion del campo). En un ticket
+        # cerrado o sin clasificar el estado queda bloqueado con su valor actual.
+        if esta_abierto(ticket):
+            form.fields['status'].queryset = Status.objects.filter(category=Status.CATEGORY_OPEN)
+        else:
+            form.fields['status'].disabled = True
         return form
 
     def build_closed_form(data=None):
         if not can_resolve:
             return None
         form = opened_ticket_form(data, instance=ticket) if data is not None else opened_ticket_form(instance=ticket)
-        # closure_agent nunca debe quedar seleccionable: se fuerza siempre
-        # a quien edita (ver mas abajo), igual que en solve_ticket.
+        # R1b: los datos de cierre de un ticket resuelto son de solo lectura en
+        # la edicion. La solucion original no se sobrescribe (la futura accion
+        # «Corregir solucion» guardara versiones con autor y fecha) y el agente
+        # de cierre ya no se reasigna a quien edita.
         form.fields['closure_agent'].disabled = True
+        form.fields['solution'].disabled = True
         return form
 
     if request.method == 'POST':
@@ -702,16 +722,36 @@ def edit_ticket(request, id):
         closed_form = build_closed_form(request.POST)
 
         if create_form.is_valid() and (closed_form is None or closed_form.is_valid()):
-            ticket.customer_id = original_customer_id
-            if not is_jefe_de_mesa:
-                ticket.asigned_area_id = original_area_id
-            if can_resolve:
-                # closure_agent no debe poder falsificarse via POST (el
-                # campo del formulario permite elegir cualquier agente o
-                # jefe de mesa): se fija a quien realmente esta editando.
-                ticket.closure_agent = get_object_or_404(Profile, user=request.user)
-            create_form.save()
-            ticket.save()  # Guardar el ticket actualizado
+            # R1b: guardado atomico de SOLO los campos autorizados.
+            # Antes se hacia create_form.save() + ticket.save(), que escriben el
+            # objeto COMPLETO leido al inicio de la peticion: si otro agente
+            # resolvia el ticket entre esa lectura y el guardado, la edicion lo
+            # reabria y borraba solucion, agente y fecha de cierre. Ahora:
+            # - solo se escriben los campos habilitados del formulario (nunca
+            #   customer, ni asigned_area para el Agente, ni los de cierre);
+            # - dentro de la transaccion se relee la fila bloqueada y se
+            #   revalidan alcance y estado; si el estado cambio desde que se
+            #   cargo la edicion, se rechaza entera (409) sin guardar nada.
+            # La reasignacion de closure_agent a quien edita ya no existe.
+            campos = [
+                nombre for nombre, campo in create_form.fields.items()
+                if not campo.disabled
+                and nombre != 'customer'
+                and (is_jefe_de_mesa or nombre != 'asigned_area')
+            ]
+            with transaction.atomic():
+                actual = Ticket.objects.select_for_update().get(pk=ticket.pk)
+                if not puede_operar_ticket(request.user, actual):
+                    raise PermissionDenied
+                if actual.status_id != estado_al_cargar:
+                    return render(request, 'tickets/edit_ticket.html', {
+                        'create_form': None, 'closed_form': None, 'ticket': actual,
+                        'can_resolve': False, 'conflicto': True,
+                        'error': 'Este ticket cambió mientras lo editabas (por ejemplo, otro agente lo resolvió). No se guardó ningún cambio.',
+                    }, status=409)
+                for nombre in campos:
+                    setattr(actual, nombre, create_form.cleaned_data[nombre])
+                actual.save(update_fields=campos)
             return redirect('ticket_view', id=ticket.id)
         # 4.4.5: antes, 'error' se armaba SIEMPRE despues de este if/else
         # (tambien en un GET sin ningun problema real), asi que el mensaje
@@ -748,23 +788,36 @@ def solve_ticket(request,id):
     else:
         raise PermissionDenied
 
+    # R1b: solo se resuelve un ticket de categoria abierta. Cualquier otro
+    # (resuelto, no aplica, sin clasificar) responde 409 sin formulario.
+    if not esta_abierto(ticket):
+        return _ticket_no_abierto(request, ticket)
+
     if request.method == 'POST':
-        form = opened_ticket_form(request.POST, instance=ticket)
+        form = resolve_ticket_form(request.POST)
         if form.is_valid():
-            ticket = form.save(commit=False)
-            # closure_agent no debe poder falsificarse via POST: se fija a
-            # quien realmente esta resolviendo el ticket.
-            ticket.closure_agent = get_object_or_404(Profile, user=request.user)
-            current_status = Status.objects.system(Status.KEY_RESOLVED)  # E1: por clave
-            ticket.status = current_status
-            ticket.closing_date = timezone.now()
-            ticket = form.save()
-            return redirect('ticket_view', id=id)
-        else:
-            return render(request, 'tickets/solve_ticket.html', {'ticket': ticket, 'form': form, 'error': 'Hubo un problema con el formulario'})
-    else:
-        form = opened_ticket_form(instance=ticket)
+            try:
+                resolver_ticket(request.user, ticket, form.cleaned_data['solution'])
+            except ResolucionNoPermitida as error:
+                if error.mensaje == ResolucionNoPermitida.TICKET_NO_ABIERTO:
+                    # Otro envio lo resolvio entre la carga y este POST.
+                    return _ticket_no_abierto(request, ticket)
+                form.add_error('solution', error.mensaje)
+            else:
+                return redirect('ticket_view', id=id)
+        return render(request, 'tickets/solve_ticket.html', {'ticket': ticket, 'form': form, 'error': 'Hubo un problema con el formulario'})
+    form = resolve_ticket_form()
     return render(request, 'tickets/solve_ticket.html', {'ticket': ticket, 'form': form})
+
+
+def _ticket_no_abierto(request, ticket):
+    # R1b: respuesta 409 (Conflict) comprensible, con enlace al detalle.
+    ticket.refresh_from_db()
+    return render(request, 'tickets/solve_ticket.html', {
+        'ticket': ticket,
+        'no_abierto': True,
+        'error': ResolucionNoPermitida.TICKET_NO_ABIERTO,
+    }, status=409)
 
 @login_required
 @require_http_methods(["POST"])
@@ -791,11 +844,10 @@ def solve_button (request, id):
     else:
         raise PermissionDenied
 
-    ticket.closing_date = timezone.now()
-    # E1: antes 'status_id = 2' fijo; ahora el estado de sistema 'resuelto' por clave.
-    ticket.status = Status.objects.system(Status.KEY_RESOLVED)
-    ticket.save()  # Guardar el ticket actualizado
-    return redirect('tickets')
+    # R1b: el boton rapido ya no cierra el ticket (antes lo resolvia sin
+    # solucion ni agente de cierre). Tras las mismas comprobaciones de
+    # permiso y alcance, lleva al formulario de resolucion.
+    return redirect('solve_ticket', id=ticket.id)
 
 @login_required
 def delete_ticket(request, id):

@@ -16,6 +16,11 @@
     {% endif %}
     <div class="ticket_edit_layout ticket_edit_layout--edit">
       <div class="ticket_edit_main">
+        {% if conflicto %}
+        {% comment %}R1b: conflicto de edición concurrente (respuesta 409). Sin formulario.{% endcomment %}
+        <p>Estado actual: {{ ticket.status }}.</p>
+        <p><a href="{% url 'ticket_view' ticket.id %}">Ver el ticket actualizado</a></p>
+        {% else %}
         <form action="" method="post">
           {% csrf_token %}
           {{ create_form.as_p }}
@@ -28,6 +33,7 @@
 
           <button class="save_button" type="submit"><p><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Guardar</p></button>
         </form>
+        {% endif %}
       </div>
 
       <div class="ticket_section ticket_context_panel">

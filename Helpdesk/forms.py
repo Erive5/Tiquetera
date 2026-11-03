@@ -188,6 +188,18 @@ class opened_ticket_form(forms.ModelForm):
             'closure_agent',
             ]
         
+class resolve_ticket_form(forms.Form):
+    # R1b: el formulario de resolución solo pide la solución. El agente de
+    # cierre, la fecha y el estado los fija ticket_actions.resolver_ticket().
+    # CharField recorta espacios por defecto (strip=True) y es obligatorio, así
+    # que una solución vacía o solo con espacios es un error de formulario.
+    solution = forms.CharField(
+        label='Solución',
+        max_length=255,
+        widget=forms.Textarea(attrs={'placeholder': 'Describe cómo se resolvió el ticket'}),
+        error_messages={'required': 'Escribe la solución antes de resolver el ticket.'},
+    )
+
 #FORMS TICKET ATTRIBUTES
 class create_priority_form(forms.ModelForm):
     priority_description = forms.CharField(

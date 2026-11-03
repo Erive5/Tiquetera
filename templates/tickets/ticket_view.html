@@ -28,12 +28,10 @@
                 
                 {% if user_type == "Administrador" or user_type == "Agente" %}
                 <div class="button_container">
-                    <form method="post" action="{% url 'solve_button' ticket.id %}">
-                        {% csrf_token %}
-                        {% if ticket.status.status_description != 'Resuelto' and not ticket.solution %}
-                        <button class="solve_button" type="submit"><i class="fa-solid fa-check"></i> Resolver</button>
-                        {% endif %}
-                    </form>
+                    {% comment %}R1b: «Resolver» navega al formulario de resolución (GET); ya no cierra con un POST. Se muestra según acciones calculadas en el servidor (permiso, alcance y categoría abierta), no según el texto del estado.{% endcomment %}
+                    {% if acciones.resolver %}
+                    <a class="solve_link" href="{% url 'solve_ticket' ticket.id %}"><i class="fa-solid fa-check" aria-hidden="true"></i> Resolver</a>
+                    {% endif %}
                     <form id="button_box_edit" method="get" action="{% url 'edit_ticket' ticket.id %}">
                         <button class="edit_button" type="submit" aria-label="Editar ticket {{ ticket.id }}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
                     </form>

@@ -96,7 +96,7 @@
             <td>{{ ticket.asigned_area }}</td>
             <td>
               {% include "tickets/_status_badge.html" %}
-              {% if ticket.status.status_description != "Resuelto" and ticket.status.status_description != "No aplica" %}
+              {% if ticket.status.category == "open" and perms.Helpdesk.change_ticket %}
               <a class="solve_link" href="{% url 'solve_ticket' ticket.id %}"><i class="fa-solid fa-check"></i> Resolver</a>
               {% endif %}
             </td>
@@ -110,7 +110,7 @@
       escritorio y mostrada solo bajo el media query de 768px en
       styles.css; la tabla de arriba se oculta ahi mismo en ese mismo
       breakpoint. Mismas condiciones de permisos/estado que la tabla:
-      Resolver solo si el estado no es Resuelto ni No aplica.
+      R1b: Resolver solo si el estado es de categoria abierta y hay permiso.
       {% endcomment %}
       <div class="ticket_cards">
         {% for ticket in tickets %}
@@ -136,7 +136,7 @@
           </dl>
           <div class="ticket_card_actions">
             <a href="{% url 'ticket_view' ticket.id %}" title="Ver detalles ticket"><i class="fa-solid fa-clipboard-list"></i> Detalles</a>
-            {% if ticket.status.status_description != "Resuelto" and ticket.status.status_description != "No aplica" %}
+            {% if ticket.status.category == "open" and perms.Helpdesk.change_ticket %}
             <a class="solve_link" href="{% url 'solve_ticket' ticket.id %}"><i class="fa-solid fa-check"></i> Resolver</a>
             {% endif %}
           </div>

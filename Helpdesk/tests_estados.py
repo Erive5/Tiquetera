@@ -358,17 +358,22 @@ class VistasPorClaveTests(_Usuarios):
         Status.objects.create(status_description="Relleno")  # ocupa ids para que «resuelto» no sea el 2
         return Status.objects.create(status_description="Resuelto", system_key="resolved", category="resolved")
 
-    def test_boton_rapido_resuelve_por_clave_aunque_el_id_no_sea_2(self):
+    def test_boton_rapido_ya_no_resuelve_y_lleva_al_formulario(self):
+        # R1b (regla 5): antes este test comprobaba que el boton rapido
+        # resolvia por clave aunque el id no fuera 2. El boton ya no resuelve;
+        # la resolucion por clave con id != 2 sigue cubierta por
+        # test_formulario_resolver_usa_la_clave (abajo).
         nuevo = self._resuelto_con_otro_id()
         self.assertNotEqual(nuevo.id, 2)
         _, cp = self._usuario("cli3", ROLE_CLIENTE)
         u, _ = self._usuario("age3", ROLE_AGENTE, area=self.area)
         t = self._ticket(cp, Status.objects.system("initial"))
         self.client.force_login(u)
-        self.assertEqual(self.client.post(reverse("solve_button", args=[t.id])).status_code, 302)
+        resp = self.client.post(reverse("solve_button", args=[t.id]))
+        self.assertRedirects(resp, reverse("solve_ticket", args=[t.id]), fetch_redirect_response=False)
         t.refresh_from_db()
-        self.assertEqual(t.status_id, nuevo.id)
-        self.assertIsNotNone(t.closing_date)
+        self.assertEqual(t.status.system_key, "initial")
+        self.assertIsNone(t.closing_date)
 
     def test_formulario_resolver_usa_la_clave(self):
         nuevo = self._resuelto_con_otro_id()

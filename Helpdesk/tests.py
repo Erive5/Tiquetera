@@ -2043,7 +2043,9 @@ class EditSolveTicketAuthorizationTests(TestCase):
             issue="T",
             priority=Priority.objects.create(priority_description=f"P-{n}"),
             type=Type.objects.create(type_description=f"Tp-{n}"),
-            status=Status.objects.create(status_description=f"S-{n}"),
+            # R1b: representa un ticket abierto -> estado de categoria abierta
+            # (desde E1 un estado de texto libre queda sin clasificar).
+            status=Status.objects.create(status_description=f"S-{n}", category="open"),
             customer=customer,
             observation="obs",
             **kwargs,
@@ -2302,7 +2304,9 @@ class EditSolveTicketAuthorizationTests(TestCase):
         ticket.refresh_from_db()
         self.assertEqual(ticket.status_id, original_status_id)
 
-    def test_solve_button_agente_en_alcance_puede_resolver(self):
+    def test_solve_button_agente_en_alcance_redirige_al_formulario_sin_resolver(self):
+        # R1b (regla 5): el boton rapido ya no cierra; lleva al formulario.
+        # Antes: test_solve_button_agente_en_alcance_puede_resolver (afirmaba closing_date).
         area = Area.objects.create(area_description="Area-SB6")
         agente_user, agente_profile = self._agente("sb6", area=area)
         _, cliente_profile = self._cliente("sb7")
@@ -2310,20 +2314,24 @@ class EditSolveTicketAuthorizationTests(TestCase):
 
         self.client.force_login(agente_user)
         resp = self.client.post(reverse("solve_button", args=[ticket.id]))
-        self.assertEqual(resp.status_code, 302)
+        self.assertRedirects(resp, reverse("solve_ticket", args=[ticket.id]), fetch_redirect_response=False)
         ticket.refresh_from_db()
-        self.assertIsNotNone(ticket.closing_date)
+        self.assertIsNone(ticket.closing_date)
+        self.assertIsNone(ticket.closure_agent)
 
-    def test_solve_button_jefe_de_mesa_non_superuser_puede_resolver(self):
+    def test_solve_button_jefe_de_mesa_non_superuser_redirige_al_formulario_sin_resolver(self):
+        # R1b (regla 5): idem para el Jefe de Mesa.
+        # Antes: test_solve_button_jefe_de_mesa_non_superuser_puede_resolver.
         jefe_user, _ = self._jefe("sb8")
         _, cliente_profile = self._cliente("sb9")
         ticket = self._make_ticket(cliente_profile)
 
         self.client.force_login(jefe_user)
         resp = self.client.post(reverse("solve_button", args=[ticket.id]))
-        self.assertEqual(resp.status_code, 302)
+        self.assertRedirects(resp, reverse("solve_ticket", args=[ticket.id]), fetch_redirect_response=False)
         ticket.refresh_from_db()
-        self.assertIsNotNone(ticket.closing_date)
+        self.assertIsNone(ticket.closing_date)
+        self.assertIsNone(ticket.closure_agent)
 
     def test_solve_button_usuario_sin_grupo_rbac_403(self):
         sin_grupo_user = User.objects.create_user(username="sin_grupo_sb@test.cl", password="x", is_staff=True)
@@ -2448,7 +2456,10 @@ class ClosureAgentQuerysetAndEditTicketFieldRestrictionsTests(TestCase):
 
     # ---- edit_ticket: la reversion server-side sigue intacta en POST ----
 
-    def test_edit_ticket_reabrir_resuelto_closure_agent_se_fija_a_quien_edita(self):
+    def test_edit_ticket_resuelto_conserva_closure_agent_y_solucion_originales(self):
+        # R1b (regla 3 y decision 1): editar un ticket resuelto ya no reasigna
+        # closure_agent a quien edita ni sobrescribe la solucion original.
+        # Antes: test_edit_ticket_reabrir_resuelto_closure_agent_se_fija_a_quien_edita.
         area = Area.objects.create(area_description="Area-24-3")
         agente_user, agente_profile = self._agente("f7", area=area)
         otro_agente_user, otro_agente_profile = self._agente("f8", area=area)
@@ -2470,10 +2481,12 @@ class ClosureAgentQuerysetAndEditTicketFieldRestrictionsTests(TestCase):
         })
         self.assertEqual(resp.status_code, 302)
         ticket.refresh_from_db()
-        # closure_agent queda en quien edito (agente_user), no en el valor
-        # enviado en el POST ni en el closure_agent original.
-        self.assertEqual(ticket.closure_agent_id, agente_profile.id)
-        self.assertNotEqual(ticket.closure_agent_id, otro_agente_profile.id)
+        # closure_agent conserva al agente que cerro originalmente: ni quien
+        # edita (agente_user) ni un valor enviado por POST lo cambian.
+        self.assertEqual(ticket.closure_agent_id, otro_agente_profile.id)
+        self.assertNotEqual(ticket.closure_agent_id, agente_profile.id)
+        # Decision 1: la solucion de un ticket resuelto es de solo lectura.
+        self.assertEqual(ticket.solution, "resuelto por otro")
 
 
 # ---------------------------------------------------------------------------
@@ -4198,7 +4211,7 @@ class TicketListVisualRedesignTests(TestCase):
 
     def test_jefe_de_mesa_estado_pendiente_muestra_badge_y_enlace_semantico_resolver(self):
         _, cliente_profile = self._cliente("r3")
-        status = Status.objects.create(status_description="A resolución-43c-pendiente")
+        status = Status.objects.create(status_description="A resolución-43c-pendiente", category="open")  # R1b
         ticket = Ticket.objects.create(
             issue="Ticket pendiente", priority=self.priority, type=self.type,
             status=status, customer=cliente_profile, observation="o",
@@ -4229,7 +4242,7 @@ class TicketListVisualRedesignTests(TestCase):
         # para quien tiene el permiso, sin que el cambio de <button> a <a>
         # haya alterado esa navegacion.
         _, cliente_profile = self._cliente("r5")
-        status = Status.objects.create(status_description="A resolución-43c-nav")
+        status = Status.objects.create(status_description="A resolución-43c-nav", category="open")  # R1b
         ticket = Ticket.objects.create(
             issue="Ticket para navegacion", priority=self.priority, type=self.type,
             status=status, customer=cliente_profile, observation="o",
@@ -4298,8 +4311,10 @@ class TicketListMobileCardsAndFiltersToggleTests(TestCase):
         set_user_role_group(user, ROLE_CLIENTE)
         return user, profile
 
-    def _ticket(self, customer_profile, status_description, **extra):
-        status = Status.objects.create(status_description=status_description)
+    def _ticket(self, customer_profile, status_description, categoria=None, **extra):
+        # R1b: `categoria` opcional; solo los tickets que representan un estado
+        # abierto la pasan ("open"). Sin ella el estado queda sin clasificar.
+        status = Status.objects.create(status_description=status_description, category=categoria)
         return Ticket.objects.create(
             issue="Ticket %s" % status_description, priority=self.priority, type=self.type,
             status=status, customer=customer_profile, observation="o", **extra
@@ -4363,7 +4378,7 @@ class TicketListMobileCardsAndFiltersToggleTests(TestCase):
 
     def test_jefe_de_mesa_tarjeta_movil_incluye_resolver_si_corresponde(self):
         _, cliente_profile = self._cliente("card2")
-        ticket = self._ticket(cliente_profile, "A resolución-43d-card2")
+        ticket = self._ticket(cliente_profile, "A resolución-43d-card2", categoria="open")  # R1b
         user, _ = self._jefe()
         self.client.force_login(user)
         resp = self.client.get(reverse("tickets"))
@@ -5113,7 +5128,7 @@ class AsPFormDeadCodeAndTokensTests(TestCase):
             issue="T", observation="obs", customer=cliente_profile,
             priority=Priority.objects.create(priority_description="P-apf2"),
             type=Type.objects.create(type_description="Tp-apf2"),
-            status=Status.objects.create(status_description="S-apf2"),
+            status=Status.objects.create(status_description="S-apf2", category="open"),  # R1b
         )
         self.client.force_login(jefe)
         # POST invalido (sin los campos requeridos por opened_ticket_form)
