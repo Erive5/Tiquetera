@@ -132,7 +132,10 @@ class Profile(models.Model):
     user = models.OneToOneField(User,on_delete=models.CASCADE, related_name='profile_user', verbose_name="Usuario")
     rut = models.CharField(max_length=12, verbose_name="RUT", blank=True)
     phone = models.CharField(max_length=9, verbose_name="Teléfono")
-    area = models.ForeignKey(Area, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Área")
+    # R1a: SET_NULL (antes CASCADE). Eliminar un área no debe borrar los perfiles
+    # de sus agentes: quedan sin área (estado ya posible y contemplado por
+    # ticket_scope.agent_ticket_scope_q, que no da acceso a tickets sin área).
+    area = models.ForeignKey(Area, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Área")
 
     class Meta:
         verbose_name_plural = "Perfiles"
@@ -146,17 +149,21 @@ class Profile(models.Model):
         return f"{full_name}"
 
 class Ticket(models.Model):
+    # R1a: todas las relaciones usan PROTECT (antes CASCADE). Borrar una
+    # prioridad, tipo, estado, área, perfil o usuario que tenga tickets lanza
+    # ProtectedError en vez de borrar esos tickets en cascada, por cualquier
+    # camino (vistas, Django Admin, shell, borrados masivos o indirectos).
     issue = models.CharField(max_length=200, verbose_name="Asunto")
     opening_date = models.DateField(auto_now_add=True, verbose_name="Fecha Apertura")
-    priority = models.ForeignKey(Priority, on_delete=models.CASCADE, verbose_name="Prioridad")
-    type = models.ForeignKey(Type, on_delete=models.CASCADE, verbose_name="Tipo")
-    status = models.ForeignKey(Status, on_delete=models.CASCADE, verbose_name="Estado")
-    customer = models.ForeignKey(Profile, on_delete=models.CASCADE, verbose_name="Cliente")
+    priority = models.ForeignKey(Priority, on_delete=models.PROTECT, verbose_name="Prioridad")
+    type = models.ForeignKey(Type, on_delete=models.PROTECT, verbose_name="Tipo")
+    status = models.ForeignKey(Status, on_delete=models.PROTECT, verbose_name="Estado")
+    customer = models.ForeignKey(Profile, on_delete=models.PROTECT, verbose_name="Cliente")
     observation = models.TextField(max_length=255, verbose_name="Observación")
-    asigned_area = models.ForeignKey(Area, on_delete=models.CASCADE, related_name="asigned_area",default=None, null=True, verbose_name="Área asignada")
+    asigned_area = models.ForeignKey(Area, on_delete=models.PROTECT, related_name="asigned_area",default=None, null=True, verbose_name="Área asignada")
     solution = models.TextField(max_length=255, verbose_name="Solución")
-    opening_agent = models.ForeignKey(Profile,on_delete=models.CASCADE,verbose_name="Agente apertura", blank=True, null=True , related_name="opened_tickets")
-    closure_agent = models.ForeignKey(Profile, on_delete=models.CASCADE, verbose_name="Agente cierre",blank=True, null=True , related_name="closed_tickets")
+    opening_agent = models.ForeignKey(Profile,on_delete=models.PROTECT,verbose_name="Agente apertura", blank=True, null=True , related_name="opened_tickets")
+    closure_agent = models.ForeignKey(Profile, on_delete=models.PROTECT, verbose_name="Agente cierre",blank=True, null=True , related_name="closed_tickets")
     closing_date = models.DateField(null=True, verbose_name="Fecha cierre")
     class Meta:
         verbose_name_plural = "Tickets"
