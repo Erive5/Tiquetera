@@ -1,5 +1,7 @@
+from django import forms as django_forms
 from django.contrib import admin
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from .models import *
 from .forms import *
 # from .views import filter_customers, filter_agents
@@ -118,8 +120,67 @@ class ProfileAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
 admin.site.register(Profile, ProfileAdmin)
 
+# B1: protección contra sobrescrituras concurrentes desde el admin.
+# Django guarda con obj.save() COMPLETO usando el ticket leído al inicio de la
+# petición (get_object, sin bloqueo). Aunque los campos de cierre sean de solo
+# lectura en el formulario, ese guardado los reescribía con valores obsoletos:
+# si otro agente resolvía el ticket entretanto, el admin lo reabría y borraba
+# solución, agente y fecha de cierre. Dos capas:
+#   1. TicketAdminForm.clean(): relee la fila con select_for_update() y rechaza
+#      la edición (error de formulario, HTTP 200, sin guardar ni LogEntry) si
+#      el cierre cambió desde que se cargó el formulario.
+#   2. TicketAdmin.save_model(): escribe SOLO los campos editables autorizados
+#      que cambiaron (update_fields), nunca los de cierre. Protege el cierre en
+#      cualquier motor, también si una resolución ocurre después de validar.
+CAMPOS_DE_CIERRE = ("status", "solution", "closure_agent", "closing_date")
+
+
+def _firma_de_cierre(ticket):
+    return (ticket.status_id, ticket.solution, ticket.closure_agent_id, ticket.closing_date)
+
+
+def _campos_editables_autorizados():
+    """Campos concretos y editables del modelo Ticket, excluidos la PK y los de cierre."""
+    return {
+        campo.name for campo in Ticket._meta.concrete_fields
+        if campo.editable and not campo.primary_key
+    } - set(CAMPOS_DE_CIERRE)
+
+
+class TicketAdminForm(django_forms.ModelForm):
+    MENSAJE_CONFLICTO = (
+        "Este ticket cambió mientras lo editabas (por ejemplo, otro agente lo resolvió). "
+        "No se guardó ningún cambio."
+    )
+
+    class Meta:
+        model = Ticket
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Cierre tal como estaba al cargar el ticket, antes de que la validación
+        # modifique la instancia en memoria.
+        self._firma_al_cargar = _firma_de_cierre(self.instance) if self.instance.pk else None
+
+    def clean(self):
+        datos = super().clean()
+        if self.instance.pk is not None:
+            # changeform_view del admin ya envuelve la petición en una
+            # transacción: el bloqueo de fila se mantiene hasta el commit que
+            # sigue a save_model(). El atomic() interno es un savepoint en ese
+            # caso y solo garantiza que select_for_update() nunca corra fuera
+            # de una transacción. En SQLite select_for_update() es un no-op.
+            with transaction.atomic():
+                actual = Ticket.objects.select_for_update().get(pk=self.instance.pk)
+            if _firma_de_cierre(actual) != self._firma_al_cargar:
+                raise ValidationError(self.MENSAJE_CONFLICTO, code="conflicto_de_cierre")
+        return datos
+
+
 class TicketAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
     # form = TicketAdminForm 
+    form = TicketAdminForm  # B1
     # R1a: los tickets nacen y se cierran solo desde la aplicación (reglas de
     # estado y de cierre). En el admin, ni siquiera un superusuario puede
     # crearlos, eliminarlos (individual o masivamente) ni editar los campos de
@@ -131,6 +192,16 @@ class TicketAdmin(SuperuserOnlyAdminMixin, admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def save_model(self, request, obj, form, change):
+        # B1: nunca obj.save() completo. Solo los campos editables autorizados
+        # que el formulario cambió; los de cierre jamás entran en el UPDATE.
+        if not change:
+            raise PermissionDenied  # crear tickets desde el admin sigue prohibido (R1a)
+        autorizados = _campos_editables_autorizados()
+        campos = [nombre for nombre in form.changed_data if nombre in autorizados and nombre in form.fields]
+        if campos:
+            obj.save(update_fields=campos)
 
     list_display=[
         'id',
